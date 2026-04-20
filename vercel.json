@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd apps/mobile && npx expo export -p web",
+  "outputDirectory": "apps/mobile/dist/client",
+  "installCommand": "pnpm install --frozen-lockfile=false",
+  "functions": {
+    "api/[[...route]].js": {
+      "includeFiles": "apps/mobile/dist/server/**"
+    }
+  }
+}

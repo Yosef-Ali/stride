@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+web-build/
+.DS_Store
+*.log
+.env
+.env.local
+packages/*/drizzle
+apps/*/node_modules
+apps/*/.expo
+apps/*/dist
+.vercel
+.env*.local
