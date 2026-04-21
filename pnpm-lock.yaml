@@ -53,6 +53,9 @@ importers:
       expo-router:
         specifier: ~6.0.23
         version: 6.0.23(bac03825feabf471d4964087a38d170b)
+      expo-sensors:
+        specifier: ^55.0.13
+        version: 55.0.13(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))
       expo-status-bar:
         specifier: ~3.0.9
         version: 3.0.9(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -71,9 +74,6 @@ importers:
       react-native-gesture-handler:
         specifier: ~2.28.0
         version: 2.28.0(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-health-connect:
-        specifier: ^3.5.0
-        version: 3.5.0(@expo/config-plugins@54.0.4)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-reanimated:
         specifier: ~4.1.7
         version: 4.1.7(react-native-worklets@0.8.1(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -3347,6 +3347,12 @@ packages:
       react-server-dom-webpack:
         optional: true
 
+  expo-sensors@55.0.13:
+    resolution: {integrity: sha512-2z4xer47OfNaJ64k/kPqMZs4VBsOOkzaysYKkBhmmQszwMJkWikDq5josKNP5rpHG5NDu1btuhmWwYSIAAKrow==}
+    peerDependencies:
+      expo: '*'
+      react-native: '*'
+
   expo-server@1.0.5:
     resolution: {integrity: sha512-IGR++flYH70rhLyeXF0Phle56/k4cee87WeQ4mamS+MkVAVP+dDlOHf2nN06Z9Y2KhU0Gp1k+y61KkghF7HdhA==}
     engines: {node: '>=20.16.0'}
@@ -4854,14 +4860,6 @@ packages:
   react-native-gesture-handler@2.28.0:
     resolution: {integrity: sha512-0msfJ1vRxXKVgTgvL+1ZOoYw3/0z1R+Ked0+udoJhyplC2jbVKIJ8Z1bzWdpQRCV3QcQ87Op0zJVE5DhKK2A0A==}
     peerDependencies:
-      react: '*'
-      react-native: '*'
-
-  react-native-health-connect@3.5.0:
-    resolution: {integrity: sha512-lIfiRps+jjDs83SApQ3AzBzU2cITwn8nPRl3v+52imWJPVw7qltAXkduioOfqFqOQJuEOwd1Wei3qtMTYbTaag==}
-    engines: {node: '>= 16.0.0'}
-    peerDependencies:
-      '@expo/config-plugins': '>= 6.0.2'
       react: '*'
       react-native: '*'
 
@@ -9225,6 +9223,12 @@ snapshots:
       - '@types/react-dom'
       - supports-color
 
+  expo-sensors@55.0.13(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)):
+    dependencies:
+      expo: 54.0.33(@babel/core@7.29.0)(@expo/metro-runtime@6.1.2)(expo-router@6.0.23)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
+      invariant: 2.2.4
+      react-native: 0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)
+
   expo-server@1.0.5: {}
 
   expo-status-bar@3.0.9(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
@@ -11017,12 +11021,6 @@ snapshots:
       '@egjs/hammerjs': 2.0.17
       hoist-non-react-statics: 3.3.2
       invariant: 2.2.4
-      react: 19.1.0
-      react-native: 0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)
-
-  react-native-health-connect@3.5.0(@expo/config-plugins@54.0.4)(react-native@0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
-    dependencies:
-      '@expo/config-plugins': 54.0.4
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.1.17)(react@19.1.0)
 

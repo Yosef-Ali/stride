@@ -17,7 +17,7 @@ import { useSession } from '../../src/stores/session';
 import { apiGet, apiPost } from '../../src/lib/api';
 import { formatLongDate, greet } from '../../src/lib/mock-data';
 import { success, tapLight, tapMedium, warning } from '../../src/lib/haptics';
-import { readTodaysActivity } from '../../src/lib/health-connect';
+import { readTodaysActivity } from '../../src/lib/pedometer';
 import { colors } from '../../src/lib/tokens';
 
 type LeaderRow = {
@@ -77,12 +77,11 @@ export default function Home() {
       if (!result.ok) {
         warning();
         const msg: Record<string, string> = {
-          unsupported: 'HealthConnect is not available on this device.',
-          'not-installed':
-            'Install the HealthConnect app from the Play Store, then try again.',
+          unsupported:
+            "This device doesn't have a step-counter sensor Stride can read.",
           denied:
-            'We need permission to read your steps. Open Settings → HealthConnect → Stride to grant access.',
-          error: 'Could not read from HealthConnect.',
+            'We need permission to read your steps. Open Settings → Apps → Stride → Permissions and allow Physical activity.',
+          error: 'Could not read steps from your phone.',
         };
         Alert.alert('Could not sync', msg[result.reason] ?? 'Unknown error.');
         return;
