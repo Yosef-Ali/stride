@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,9 +14,10 @@ import { useRouter } from 'expo-router';
 import { ProgressRing } from '../../src/components/ui/ProgressRing';
 import { LogWalkSheet } from '../../src/components/LogWalkSheet';
 import { useSession } from '../../src/stores/session';
-import { apiGet } from '../../src/lib/api';
+import { apiGet, apiPost } from '../../src/lib/api';
 import { formatLongDate, greet } from '../../src/lib/mock-data';
-import { tapMedium } from '../../src/lib/haptics';
+import { success, tapLight, tapMedium, warning } from '../../src/lib/haptics';
+import { readTodaysActivity } from '../../src/lib/health-connect';
 import { colors } from '../../src/lib/tokens';
 
 type LeaderRow = {
@@ -46,6 +48,7 @@ export default function Home() {
   const [home, setHome] = useState<HomePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderRow[] | null>(null);
   const [logOpen, setLogOpen] = useState(false);
 
@@ -64,6 +67,55 @@ export default function Home() {
   useEffect(() => {
     loadHome();
   }, [loadHome]);
+
+  const onSyncFromPhone = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    tapLight();
+    try {
+      const result = await readTodaysActivity();
+      if (!result.ok) {
+        warning();
+        const msg: Record<string, string> = {
+          unsupported: 'HealthConnect is not available on this device.',
+          'not-installed':
+            'Install the HealthConnect app from the Play Store, then try again.',
+          denied:
+            'We need permission to read your steps. Open Settings → HealthConnect → Stride to grant access.',
+          error: 'Could not read from HealthConnect.',
+        };
+        Alert.alert('Could not sync', msg[result.reason] ?? 'Unknown error.');
+        return;
+      }
+      if (result.steps === 0) {
+        warning();
+        Alert.alert(
+          'Nothing to sync',
+          "Your phone hasn't recorded any steps yet today. Take a few steps and try again.",
+        );
+        return;
+      }
+      // Estimate active minutes from steps (~100 steps/min at walking pace).
+      const activeMinutes = Math.round(result.steps / 100);
+      await apiPost('/api/walks', {
+        date: new Date().toISOString().slice(0, 10),
+        distanceKm: result.distanceKm,
+        steps: result.steps,
+        activeMinutes,
+      });
+      success();
+      await loadHome();
+      Alert.alert(
+        'Synced',
+        `${result.steps.toLocaleString()} steps · ${result.distanceKm.toFixed(2)} km added for today.`,
+      );
+    } catch (e: any) {
+      warning();
+      Alert.alert('Sync failed', e?.message ?? 'Unknown error.');
+    } finally {
+      setSyncing(false);
+    }
+  }, [syncing, loadHome]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -277,17 +329,29 @@ export default function Home() {
         )}
       </ScrollView>
 
-      {/* Floating Log Walk button */}
-      <Pressable
-        style={styles.fab}
-        onPress={() => {
-          tapMedium();
-          setLogOpen(true);
-        }}
-      >
-        <Text style={styles.fabPlus}>＋</Text>
-        <Text style={styles.fabLabel}>Log walk</Text>
-      </Pressable>
+      {/* Floating action buttons: Sync (secondary) + Log walk (primary) */}
+      <View style={styles.fabRow}>
+        <Pressable
+          style={[styles.syncFab, syncing && { opacity: 0.6 }]}
+          onPress={onSyncFromPhone}
+          disabled={syncing}
+        >
+          <Text style={styles.syncIcon}>↻</Text>
+          <Text style={styles.syncLabel}>
+            {syncing ? 'Syncing…' : 'Sync steps'}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={styles.fab}
+          onPress={() => {
+            tapMedium();
+            setLogOpen(true);
+          }}
+        >
+          <Text style={styles.fabPlus}>＋</Text>
+          <Text style={styles.fabLabel}>Log walk</Text>
+        </Pressable>
+      </View>
 
       <LogWalkSheet
         visible={logOpen}
@@ -472,10 +536,15 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   compareBody: { fontSize: 15, color: colors.ink, letterSpacing: -0.2 },
-  fab: {
+  fabRow: {
     position: 'absolute',
     right: 20,
     bottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  fab: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -491,6 +560,24 @@ const styles = StyleSheet.create({
   },
   fabPlus: { color: '#fff', fontSize: 22, fontWeight: '500', lineHeight: 24 },
   fabLabel: { color: '#fff', fontSize: 15, fontWeight: '500' },
+  syncFab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  syncIcon: { color: colors.teal, fontSize: 18, fontWeight: '600' },
+  syncLabel: { color: colors.ink, fontSize: 14, fontWeight: '500' },
   skelRingRow: {
     flexDirection: 'row',
     alignItems: 'center',
