@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
+  AppState,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,14 +11,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ProgressRing } from '../../src/components/ui/ProgressRing';
-import { LogWalkSheet } from '../../src/components/LogWalkSheet';
 import { useSession } from '../../src/stores/session';
 import { apiGet, apiPost } from '../../src/lib/api';
 import { formatLongDate, greet } from '../../src/lib/mock-data';
-import { success, tapLight, tapMedium, warning } from '../../src/lib/haptics';
-import { readTodaysActivity } from '../../src/lib/pedometer';
+import { tapMedium } from '../../src/lib/haptics';
+import {
+  STEPS_PER_ACTIVE_MIN,
+  computeTodayStepsFromCumulative,
+  readTodaysActivity,
+  stepsToDistanceKm,
+  todayLocal,
+} from '../../src/lib/pedometer';
+import { addStepCounterListener } from 'stride-steps';
 import { colors } from '../../src/lib/tokens';
 
 type LeaderRow = {
@@ -48,9 +55,11 @@ export default function Home() {
   const [home, setHome] = useState<HomePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderRow[] | null>(null);
-  const [logOpen, setLogOpen] = useState(false);
+  // Live step count from the phone's sensor — overrides the server value
+  // when present so the UI ticks per footfall. Distance and active minutes
+  // are derived from this; no separate state needed.
+  const [liveSteps, setLiveSteps] = useState<number | null>(null);
 
   const loadHome = useCallback(async () => {
     if (!userId) return;
@@ -68,53 +77,112 @@ export default function Home() {
     loadHome();
   }, [loadHome]);
 
-  const onSyncFromPhone = useCallback(async () => {
-    if (syncing) return;
-    setSyncing(true);
-    tapLight();
-    try {
-      const result = await readTodaysActivity();
-      if (!result.ok) {
-        warning();
-        const msg: Record<string, string> = {
-          unsupported:
-            "This device doesn't have a step-counter sensor Stride can read.",
-          denied:
-            'We need permission to read your steps. Open Settings → Apps → Stride → Permissions and allow Physical activity.',
-          error: 'Could not read steps from your phone.',
-        };
-        Alert.alert('Could not sync', msg[result.reason] ?? 'Unknown error.');
-        return;
-      }
-      if (result.steps === 0) {
-        warning();
-        Alert.alert(
-          'Nothing to sync',
-          "Your phone hasn't recorded any steps yet today. Take a few steps and try again.",
+  // Refetch when the home tab regains focus — covers returning from /log-walk.
+  useFocusEffect(
+    useCallback(() => {
+      loadHome();
+    }, [loadHome]),
+  );
+
+  // STEP_COUNTER push events. Samsung delivers them at SENSOR_DELAY_FASTEST,
+  // which on some devices is 5-10 events/sec while walking. Pushing every
+  // event into setState re-renders the SVG ring at sensor cadence and reads
+  // as visible flicker on slower phones — so we coalesce: skip identical
+  // values, and rate-limit to ~2 visual updates/sec.
+  const homeRef = useRef<HomePayload | null>(null);
+  useEffect(() => {
+    homeRef.current = home;
+  }, [home]);
+  const lastUpdateAtRef = useRef(0);
+  const lastStepsRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = addStepCounterListener(async (event) => {
+      try {
+        const { steps } = await computeTodayStepsFromCumulative(
+          event.cumulative,
         );
-        return;
+        if (steps === lastStepsRef.current) return;
+        const now = Date.now();
+        if (now - lastUpdateAtRef.current < 500) return;
+        lastUpdateAtRef.current = now;
+        lastStepsRef.current = steps;
+        setLiveSteps(steps);
+      } catch {
+        // server post on next tick will catch up
       }
-      // Estimate active minutes from steps (~100 steps/min at walking pace).
-      const activeMinutes = Math.round(result.steps / 100);
-      await apiPost('/api/walks', {
-        date: new Date().toISOString().slice(0, 10),
-        distanceKm: result.distanceKm,
-        steps: result.steps,
-        activeMinutes,
-      });
-      success();
-      await loadHome();
-      Alert.alert(
-        'Synced',
-        `${result.steps.toLocaleString()} steps · ${result.distanceKm.toFixed(2)} km added for today.`,
-      );
-    } catch (e: any) {
-      warning();
-      Alert.alert('Sync failed', e?.message ?? 'Unknown error.');
-    } finally {
-      setSyncing(false);
-    }
-  }, [syncing, loadHome]);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Initial seed on mount + on AppState 'active'. Push events take over from
+  // there; we don't need to re-poll the sensor on a timer. Guard against
+  // concurrent seed() calls — the permission prompt itself fires AppState
+  // 'active' on dismissal, which would otherwise stack a second seed on top
+  // of the first one mid-await.
+  const liveStepsRef = useRef<number | null>(null);
+  useEffect(() => {
+    liveStepsRef.current = liveSteps;
+  }, [liveSteps]);
+  useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+    const seed = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const result = await readTodaysActivity();
+        if (cancelled || !result.ok) return;
+        if (result.steps === lastStepsRef.current) return;
+        lastStepsRef.current = result.steps;
+        setLiveSteps(result.steps);
+      } finally {
+        inFlight = false;
+      }
+    };
+    seed();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') seed();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
+  // Server post timer: every 30s, post live step totals to the server if
+  // they've grown past the throttle thresholds. Pure ref read — no sensor,
+  // no AsyncStorage on this path.
+  useEffect(() => {
+    const lastPostAt = { current: 0 };
+    const lastPostedSteps = { current: 0 };
+    const post = async () => {
+      const steps = liveStepsRef.current;
+      if (steps == null || steps === 0) return;
+      const serverSteps = homeRef.current?.today?.steps ?? 0;
+      const now = Date.now();
+      const delta = steps - lastPostedSteps.current;
+      const shouldPost =
+        steps > serverSteps &&
+        (now - lastPostAt.current > 60_000 || delta >= 50);
+      if (!shouldPost) return;
+      try {
+        await apiPost('/api/walks', {
+          date: todayLocal(),
+          distanceKm: stepsToDistanceKm(steps),
+          steps,
+          activeMinutes: Math.round(steps / STEPS_PER_ACTIVE_MIN),
+        });
+        lastPostAt.current = now;
+        lastPostedSteps.current = steps;
+        await loadHome();
+      } catch {
+        // silent — pull-to-refresh will surface real errors
+      }
+    };
+    const interval = setInterval(post, 30_000);
+    return () => clearInterval(interval);
+  }, [loadHome]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -157,14 +225,21 @@ export default function Home() {
   const today = home?.today;
   const week = home?.week ?? [];
   const todayIdx = home?.todayIdx ?? 0;
+  // Ring + side stats reflect step-counter data only — never logged walks.
+  // Logged walks roll up into the weekly bar chart and stats, but the ring
+  // stays a pure pedometer view. Sensor reading takes priority; server's
+  // recorded step count is the fallback before the first sensor event.
+  const displaySteps = liveSteps ?? today?.steps ?? 0;
+  const displayDistanceKm = stepsToDistanceKm(displaySteps);
+  const displayActiveMinutes = Math.round(displaySteps / STEPS_PER_ACTIVE_MIN);
   const paceKmh =
-    today && today.activeMinutes > 0
-      ? today.distanceKm / (today.activeMinutes / 60)
+    displayActiveMinutes > 0
+      ? displayDistanceKm / (displayActiveMinutes / 60)
       : 0;
   const weekTotal = week.reduce((s, w) => s + w.distanceKm, 0);
   const noWalksYet = !!home && weekTotal === 0;
   const weekMax = Math.max(1, ...week.map((w) => w.distanceKm));
-  const ringValue = today ? Math.min(1, today.distanceKm / DAILY_GOAL_KM) : 0;
+  const ringValue = Math.min(1, displayDistanceKm / DAILY_GOAL_KM);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -196,7 +271,7 @@ export default function Home() {
                 <Text style={styles.ringEyebrow}>Today</Text>
                 <View style={styles.ringMetric}>
                   <Text style={styles.ringValue}>
-                    {(today?.distanceKm ?? 0).toFixed(1)}
+                    {displayDistanceKm.toFixed(1)}
                   </Text>
                   <Text style={styles.ringUnit}>km</Text>
                 </View>
@@ -206,12 +281,12 @@ export default function Home() {
               <View style={styles.sideStats}>
                 <SideStat
                   label="Steps"
-                  value={(today?.steps ?? 0).toLocaleString()}
+                  value={displaySteps.toLocaleString()}
                 />
                 <View style={styles.hr} />
                 <SideStat
                   label="Active"
-                  value={String(today?.activeMinutes ?? 0)}
+                  value={String(displayActiveMinutes)}
                   unit="min"
                 />
                 <View style={styles.hr} />
@@ -240,7 +315,13 @@ export default function Home() {
                       ? colors.teal
                       : '#6EBFA0';
                   return (
-                    <View key={i} style={styles.barCol}>
+                    <Pressable
+                      key={i}
+                      style={styles.barCol}
+                      disabled={isFuture}
+                      onPress={() => router.push('/(tabs)/stats')}
+                      hitSlop={8}
+                    >
                       <View
                         style={{
                           width: '100%',
@@ -249,7 +330,7 @@ export default function Home() {
                           backgroundColor: bg,
                         }}
                       />
-                    </View>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -328,23 +409,13 @@ export default function Home() {
         )}
       </ScrollView>
 
-      {/* Floating action buttons: Sync (secondary) + Log walk (primary) */}
+      {/* Floating action: Log walk only — step sync runs automatically. */}
       <View style={styles.fabRow}>
-        <Pressable
-          style={[styles.syncFab, syncing && { opacity: 0.6 }]}
-          onPress={onSyncFromPhone}
-          disabled={syncing}
-        >
-          <Text style={styles.syncIcon}>↻</Text>
-          <Text style={styles.syncLabel}>
-            {syncing ? 'Syncing…' : 'Sync steps'}
-          </Text>
-        </Pressable>
         <Pressable
           style={styles.fab}
           onPress={() => {
             tapMedium();
-            setLogOpen(true);
+            router.push('/log-walk');
           }}
         >
           <Text style={styles.fabPlus}>＋</Text>
@@ -352,11 +423,6 @@ export default function Home() {
         </Pressable>
       </View>
 
-      <LogWalkSheet
-        visible={logOpen}
-        onClose={() => setLogOpen(false)}
-        onSaved={loadHome}
-      />
     </SafeAreaView>
   );
 }

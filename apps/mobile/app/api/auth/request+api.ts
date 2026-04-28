@@ -46,5 +46,10 @@ export async function POST(req: Request) {
     console.log(`[otp] ${email} → ${result.code} (no RESEND_API_KEY, skipped send)`);
   }
 
+  // In dev (no RESEND key configured), echo the code back so the client can
+  // surface it in the DEV banner. Never include it when real email is wired.
+  if (!apiKey) {
+    return Response.json({ ok: true, devCode: result.code });
+  }
   return Response.json({ ok: true });
 }

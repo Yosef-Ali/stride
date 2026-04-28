@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mobile",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@stride/mobile", "start"],
+      "port": 8081
+    },
+    {
+      "name": "mobile-android",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@stride/mobile", "android"],
+      "port": 8081
+    },
+    {
+      "name": "mobile-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@stride/mobile", "web"],
+      "port": 8081
+    },
+    {
+      "name": "db-studio",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@stride/db", "studio"],
+      "port": 4983
+    }
+  ]
+}

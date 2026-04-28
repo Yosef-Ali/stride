@@ -58,7 +58,16 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: colors.surface },
               animation: 'slide_from_right',
             }}
-          />
+          >
+            <Stack.Screen
+              name="log-walk"
+              options={{
+                presentation: 'modal',
+                animation: 'slide_from_bottom',
+                gestureEnabled: true,
+              }}
+            />
+          </Stack>
         )}
       </SafeAreaProvider>
     </GestureHandlerRootView>

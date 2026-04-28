@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -48,6 +48,17 @@ type Winner = {
   distanceKm: string;
   awardedAt: string;
 };
+
+function StarBadge({ size = 12 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 2.5L14.85 8.55L21.5 9.1L16.45 13.55L17.95 20.05L12 16.7L6.05 20.05L7.55 13.55L2.5 9.1L9.15 8.55Z"
+        fill={colors.amber}
+      />
+    </Svg>
+  );
+}
 
 export default function CircleTab() {
   const router = useRouter();
@@ -143,6 +154,28 @@ export default function CircleTab() {
     }
   }, [active]);
 
+  const me = useMemo(
+    () => leaderboard?.find((r) => r.userId === userId) ?? null,
+    [leaderboard, userId],
+  );
+
+  const yourWeekCopy = useMemo(() => {
+    if (!leaderboard || leaderboard.length === 0 || !me) return null;
+    const leader = leaderboard[0]!;
+    const second = leaderboard[1];
+    if (me.userId === leader.userId) {
+      if (!second || second.distanceKm <= 0) return 'Out front — keep it up';
+      const ahead = me.distanceKm - second.distanceKm;
+      return ahead < 0.05
+        ? 'Neck and neck with #2'
+        : `${ahead.toFixed(1)} km ahead of #2`;
+    }
+    const gap = leader.distanceKm - me.distanceKm;
+    return gap < 0.05
+      ? 'Within reach of first'
+      : `${gap.toFixed(1)} km behind first`;
+  }, [leaderboard, me]);
+
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <ScrollView
@@ -210,48 +243,94 @@ export default function CircleTab() {
 
         {active && members && (
           <>
-            <View style={styles.inviteCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inviteLabel}>Invite code</Text>
-                <Text style={styles.inviteCode}>{active.inviteCode}</Text>
-              </View>
-              <Pressable style={styles.copyBtn} onPress={onCopy}>
-                <Text style={styles.copyLabel}>{copied ? 'Copied' : 'Copy'}</Text>
-              </Pressable>
-            </View>
-
-            {winners && winners.length > 0 && (
-              <View style={styles.championCard}>
-                <View style={styles.championHeader}>
-                  <Text style={styles.championEyebrow}>Last week's champion</Text>
-                  <Text style={styles.championWeek}>
-                    Week {winners[0]!.weekNumber} · {winners[0]!.year}
-                  </Text>
-                </View>
-                <View style={styles.championBody}>
-                  <View
-                    style={[
-                      styles.championAvatar,
-                      { backgroundColor: winners[0]!.avatarColor },
-                    ]}
-                  >
-                    <Text style={styles.championAvatarLetter}>
-                      {winners[0]!.name[0]?.toUpperCase() ?? '?'}
+            {/* Your week — personal hero */}
+            {me && yourWeekCopy && leaderboard && (
+              <View style={styles.heroCard}>
+                <Text style={styles.heroEyebrow}>your week</Text>
+                <View style={styles.heroRow}>
+                  <View style={styles.heroRankCol}>
+                    <Text style={styles.heroRank}>#{me.rank}</Text>
+                    <Text style={styles.heroRankSub}>
+                      of {leaderboard.length}
                     </Text>
-                    <View style={styles.championCrown}>
-                      <Text style={{ fontSize: 13 }}>👑</Text>
+                  </View>
+                  <View style={styles.heroSep} />
+                  <View style={styles.heroKmCol}>
+                    <View
+                      style={{ flexDirection: 'row', alignItems: 'baseline' }}
+                    >
+                      <Text style={styles.heroKm}>
+                        {me.distanceKm.toFixed(1)}
+                      </Text>
+                      <Text style={styles.heroUnit}> km</Text>
                     </View>
+                    <Text style={styles.heroGap}>{yourWeekCopy}</Text>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.championName}>
-                      {winners[0]!.userId === userId
-                        ? `${winners[0]!.name} (you)`
-                        : winners[0]!.name}
-                    </Text>
-                    <Text style={styles.championKm}>
-                      {Number(winners[0]!.distanceKm).toFixed(1)} km walked
-                    </Text>
-                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Top 3 podium */}
+            {leaderboard && leaderboard.length >= 3 && (
+              <View style={styles.podiumCard}>
+                <View style={styles.podiumRow}>
+                  {([1, 0, 2] as const).map((idx) => {
+                    const r = leaderboard[idx]!;
+                    const heights = { 0: 96, 1: 68, 2: 50 } as const;
+                    const h = heights[idx];
+                    const isYou = r.userId === userId;
+                    const fill =
+                      idx === 0
+                        ? colors.teal
+                        : idx === 1
+                          ? '#7BC0A4'
+                          : '#A8D4BF';
+                    return (
+                      <View key={r.userId} style={styles.podiumCol}>
+                        <View style={styles.podiumTop}>
+                          {idx === 0 && (
+                            <View style={styles.podiumStar}>
+                              <StarBadge size={12} />
+                            </View>
+                          )}
+                          <View
+                            style={[
+                              styles.podiumAvatar,
+                              { backgroundColor: r.avatarColor },
+                              idx === 0 && styles.podiumAvatarFirst,
+                            ]}
+                          >
+                            <Text style={styles.podiumAvatarLetter}>
+                              {r.name[0]?.toUpperCase() ?? '?'}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text
+                          style={[
+                            styles.podiumName,
+                            isYou && {
+                              color: colors.teal,
+                              fontWeight: '500',
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {isYou ? 'You' : r.name.split(' ')[0]}
+                        </Text>
+                        <Text style={styles.podiumKm}>
+                          {r.distanceKm.toFixed(1)} km
+                        </Text>
+                        <View
+                          style={[
+                            styles.podiumBar,
+                            { height: h, backgroundColor: fill },
+                          ]}
+                        >
+                          <Text style={styles.podiumRankNum}>{idx + 1}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
             )}
@@ -260,9 +339,7 @@ export default function CircleTab() {
               <>
                 <View style={styles.membersHeader}>
                   <Text style={styles.sectionTitle}>This week</Text>
-                  <Text style={styles.sectionCount}>
-                    Mon – Sun
-                  </Text>
+                  <Text style={styles.sectionCount}>Mon – Sun</Text>
                 </View>
                 <View style={styles.card}>
                   {leaderboard.map((r, i) => {
@@ -277,13 +354,17 @@ export default function CircleTab() {
                         key={r.userId}
                         style={[
                           styles.lbRow,
+                          isYou && styles.lbRowYou,
                           i < leaderboard.length - 1 && styles.rowDivider,
                         ]}
                       >
                         <Text
                           style={[
                             styles.lbRank,
-                            i === 0 && { color: colors.teal, fontWeight: '500' },
+                            i === 0 && {
+                              color: colors.teal,
+                              fontWeight: '500',
+                            },
                           ]}
                         >
                           {r.rank}
@@ -333,11 +414,47 @@ export default function CircleTab() {
               </>
             )}
 
+            {winners && winners.length > 0 && (
+              <View style={styles.championCard}>
+                <View style={styles.championHeader}>
+                  <Text style={styles.championEyebrow}>
+                    Last week's champion
+                  </Text>
+                  <Text style={styles.championWeek}>
+                    Week {winners[0]!.weekNumber} · {winners[0]!.year}
+                  </Text>
+                </View>
+                <View style={styles.championBody}>
+                  <View
+                    style={[
+                      styles.championAvatar,
+                      { backgroundColor: winners[0]!.avatarColor },
+                    ]}
+                  >
+                    <Text style={styles.championAvatarLetter}>
+                      {winners[0]!.name[0]?.toUpperCase() ?? '?'}
+                    </Text>
+                    <View style={styles.championBadge}>
+                      <StarBadge size={12} />
+                    </View>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.championName}>
+                      {winners[0]!.userId === userId
+                        ? `${winners[0]!.name} (you)`
+                        : winners[0]!.name}
+                    </Text>
+                    <Text style={styles.championKm}>
+                      {Number(winners[0]!.distanceKm).toFixed(1)} km walked
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             <View style={styles.membersHeader}>
               <Text style={styles.sectionTitle}>Members</Text>
-              <Text style={styles.sectionCount}>
-                {members.length} / 10
-              </Text>
+              <Text style={styles.sectionCount}>{members.length} / 10</Text>
             </View>
 
             <View style={styles.card}>
@@ -377,18 +494,33 @@ export default function CircleTab() {
               ))}
             </View>
 
-            <Pressable style={styles.inviteRowBtn} onPress={onShare}>
-              <Text style={styles.inviteRowLabel}>Share invite link</Text>
-              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                <Path
-                  d="M9 6l6 6-6 6"
-                  stroke={colors.teal}
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </Svg>
-            </Pressable>
+            {/* Invite — combined Copy + Share */}
+            <View style={styles.inviteCard}>
+              <Text style={styles.inviteEyebrow}>invite</Text>
+              <Text style={styles.inviteHeading}>
+                Add friends to {active.name}
+              </Text>
+              <View style={styles.inviteCodeChip}>
+                <Text style={styles.inviteCodeBig}>{active.inviteCode}</Text>
+              </View>
+              <View style={styles.inviteActions}>
+                <Pressable
+                  style={[styles.inviteAction, styles.inviteActionGhost]}
+                  onPress={onCopy}
+                >
+                  <Text
+                    style={[styles.inviteActionLabel, { color: colors.teal }]}
+                  >
+                    {copied ? 'Copied' : 'Copy code'}
+                  </Text>
+                </Pressable>
+                <Pressable style={styles.inviteAction} onPress={onShare}>
+                  <Text style={[styles.inviteActionLabel, { color: '#fff' }]}>
+                    Share
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
           </>
         )}
 
@@ -456,39 +588,151 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   emptyCtaLabel: { color: '#fff', fontSize: 14, fontWeight: '500' },
-  inviteCard: {
+
+  // Hero "Your week"
+  heroCard: {
     marginHorizontal: 20,
-    padding: 16,
-    paddingLeft: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: 12,
-    backgroundColor: colors.card,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    backgroundColor: colors.tealSoft,
     marginBottom: 14,
   },
-  inviteLabel: {
+  heroEyebrow: {
     fontSize: 10,
-    color: colors.muted,
-    letterSpacing: 0.4,
+    color: colors.tealDeep,
+    letterSpacing: 1,
     textTransform: 'uppercase',
     fontWeight: '500',
+    marginBottom: 10,
   },
-  inviteCode: {
-    fontSize: 18,
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroRankCol: {
+    minWidth: 64,
+  },
+  heroRank: {
+    fontSize: 38,
+    fontWeight: '500',
+    color: colors.tealDeep,
+    letterSpacing: -1.6,
+    fontVariant: ['tabular-nums'],
+    lineHeight: 40,
+  },
+  heroRankSub: {
+    fontSize: 11,
+    color: colors.muted,
+    letterSpacing: 0.4,
+    marginTop: 2,
+  },
+  heroSep: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: '#C7E0D6',
+    marginHorizontal: 16,
+  },
+  heroKmCol: { flex: 1 },
+  heroKm: {
+    fontSize: 38,
     fontWeight: '500',
     color: colors.ink,
-    letterSpacing: 2,
-    marginTop: 4,
+    letterSpacing: -1.6,
     fontVariant: ['tabular-nums'],
+    lineHeight: 40,
   },
-  copyBtn: {
-    backgroundColor: colors.teal,
-    borderRadius: 9,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  heroUnit: {
+    fontSize: 16,
+    color: colors.muted,
+    letterSpacing: -0.2,
   },
-  copyLabel: { color: '#fff', fontSize: 13, fontWeight: '500' },
+  heroGap: {
+    fontSize: 13,
+    color: colors.tealDeep,
+    marginTop: 4,
+    letterSpacing: -0.1,
+  },
+
+  // Podium
+  podiumCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingHorizontal: 14,
+    paddingTop: 18,
+    paddingBottom: 12,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+  },
+  podiumRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 14,
+  },
+  podiumCol: { flex: 1, alignItems: 'center' },
+  podiumTop: {
+    position: 'relative',
+    marginBottom: 6,
+  },
+  podiumAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  podiumAvatarFirst: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    borderColor: colors.amber,
+  },
+  podiumAvatarLetter: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  podiumStar: {
+    position: 'absolute',
+    top: -8,
+    right: -6,
+    zIndex: 1,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#F3D9A8',
+  },
+  podiumName: {
+    fontSize: 12,
+    color: colors.ink,
+    letterSpacing: -0.1,
+    marginTop: 4,
+    maxWidth: 80,
+  },
+  podiumKm: {
+    fontSize: 11,
+    color: colors.muted,
+    fontVariant: ['tabular-nums'],
+    marginTop: 1,
+    marginBottom: 8,
+  },
+  podiumBar: {
+    width: '100%',
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  podiumRankNum: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '500',
+    letterSpacing: -0.5,
+  },
+
+  // Section headers + shared cards
   membersHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -509,6 +753,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: 12,
     marginBottom: 14,
+    overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',
@@ -544,28 +789,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
-  inviteRowBtn: {
-    marginHorizontal: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: colors.tealSoft,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  inviteRowLabel: {
-    color: colors.teal,
-    fontSize: 14,
-    fontWeight: '500',
-    letterSpacing: -0.1,
-  },
+
+  // Leaderboard rows
   lbRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
+  },
+  lbRowYou: {
+    backgroundColor: colors.tealSoft,
   },
   lbRank: {
     width: 18,
@@ -602,6 +836,8 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
+
+  // Champion
   championCard: {
     marginHorizontal: 20,
     marginBottom: 14,
@@ -642,7 +878,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   championAvatarLetter: { color: '#fff', fontSize: 18, fontWeight: '500' },
-  championCrown: {
+  championBadge: {
     position: 'absolute',
     top: -6,
     right: -6,
@@ -652,6 +888,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#F3D9A8',
   },
   championName: {
     fontSize: 17,
@@ -664,5 +902,65 @@ const styles = StyleSheet.create({
     color: colors.amberDeep,
     marginTop: 3,
     fontVariant: ['tabular-nums'],
+  },
+
+  // Invite (combined)
+  inviteCard: {
+    marginHorizontal: 20,
+    marginBottom: 14,
+    padding: 18,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+  },
+  inviteEyebrow: {
+    fontSize: 10,
+    color: colors.muted,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    fontWeight: '500',
+  },
+  inviteHeading: {
+    marginTop: 6,
+    fontSize: 16,
+    fontWeight: '500',
+    color: colors.ink,
+    letterSpacing: -0.2,
+  },
+  inviteCodeChip: {
+    marginTop: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: colors.tealSoft,
+    alignItems: 'center',
+  },
+  inviteCodeBig: {
+    fontSize: 22,
+    fontWeight: '500',
+    color: colors.tealDeep,
+    letterSpacing: 4,
+    fontVariant: ['tabular-nums'],
+  },
+  inviteActions: {
+    marginTop: 14,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inviteAction: {
+    flex: 1,
+    backgroundColor: colors.teal,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  inviteActionGhost: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.tealSoft,
+  },
+  inviteActionLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: -0.1,
   },
 });

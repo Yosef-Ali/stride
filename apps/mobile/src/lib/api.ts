@@ -36,36 +36,62 @@ function headers(): Record<string, string> {
   return h;
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method: 'GET',
+// React Native's fetch has no default timeout — without this, a cold-
+// starting Vercel function or a flaky cell connection leaves the UI
+// stuck on the loading skeleton until the user force-quits the app.
+const REQUEST_TIMEOUT_MS = 15_000;
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function request<T>(
+  method: 'GET' | 'POST' | 'PATCH',
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const init: RequestInit = {
+    method,
     headers: headers(),
     cache: 'no-store',
-  });
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(BASE + path, init);
+  } catch (e: any) {
+    // First call after install/idle hits a Vercel cold start — retry once
+    // with a fresh timeout so the user doesn't see a spurious failure.
+    if (method === 'GET' && (e?.name === 'AbortError' || /network/i.test(e?.message ?? ''))) {
+      res = await fetchWithTimeout(BASE + path, init);
+    } else {
+      throw e;
+    }
+  }
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(await errorText(res));
-  return res.json();
+export function apiGet<T>(path: string): Promise<T> {
+  return request<T>('GET', path);
 }
 
-export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method: 'PATCH',
-    headers: headers(),
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(await errorText(res));
-  return res.json();
+export function apiPost<T>(path: string, body: unknown): Promise<T> {
+  return request<T>('POST', path, body);
+}
+
+export function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  return request<T>('PATCH', path, body);
 }
 
 async function errorText(res: Response): Promise<string> {

@@ -1,0 +1,34 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:1:1-12:12
+INJECTED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:1:1-12:12
+	package
+		INJECTED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:1:11-69
+uses-permission#android.permission.FOREGROUND_SERVICE
+ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:2:3-74
+	android:name
+		ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:2:20-72
+uses-permission#android.permission.FOREGROUND_SERVICE_HEALTH
+ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:4:3-81
+	android:name
+		ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:4:20-79
+application
+ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:6:3-11:17
+service#expo.modules.stridesteps.StepTrackingService
+ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:7:5-10:47
+	android:exported
+		ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:9:7-31
+	android:foregroundServiceType
+		ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:10:7-45
+	android:name
+		ADDED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml:8:7-66
+uses-sdk
+INJECTED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml
+INJECTED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/mekdesyared/stride/apps/mobile/modules/stride-steps/android/src/main/AndroidManifest.xml

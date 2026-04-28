@@ -1,0 +1,10 @@
+{
+  "name": "stride-steps",
+  "version": "0.1.0",
+  "description": "Native step-counter reader for Stride (Android Sensor.TYPE_STEP_COUNTER, iOS CMPedometer fallback unused).",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true,
+  "keywords": ["expo", "stride", "pedometer"],
+  "license": "UNLICENSED"
+}
