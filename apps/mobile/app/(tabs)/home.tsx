@@ -16,9 +16,9 @@ import { ProgressRing } from '../../src/components/ui/ProgressRing';
 import { useSession } from '../../src/stores/session';
 import { apiGet, apiPost } from '../../src/lib/api';
 import { formatLongDate, greet } from '../../src/lib/mock-data';
-import { tapMedium } from '../../src/lib/haptics';
 import {
   STEPS_PER_ACTIVE_MIN,
+  STEPS_PER_KM,
   computeTodayStepsFromCumulative,
   readTodaysActivity,
   stepsToDistanceKm,
@@ -34,18 +34,56 @@ type LeaderRow = {
   distanceKm: number;
 };
 
+type DayStat = {
+  date: string;
+  distanceKm: number;
+  steps: number;
+  activeMinutes: number;
+};
+
 type HomePayload = {
-  today: {
-    date: string;
-    distanceKm: number;
-    steps: number;
-    activeMinutes: number;
-  };
-  week: { date: string; distanceKm: number }[];
+  today: DayStat;
+  week: DayStat[];
   todayIdx: number;
 };
 
-const DAILY_GOAL_KM = 8;
+// Fixed visual reference. The ring fills from 0 → 20 km; past 20 km the
+// overflow arc is drawn in an accent color. The same threshold splits each
+// weekly bar into base + overflow segments. Not user-configurable — this is
+// purely the chart scale, not a goal the user needs to set.
+const KM_BENCHMARK = 20;
+
+// Equivalent benchmarks for the alternative weekly-card units. Derived from
+// the same stride-length / pace constants used everywhere else in the app so
+// the two-color split lines up across views.
+const STEP_BENCHMARK = KM_BENCHMARK * STEPS_PER_KM; // 27,000
+const MIN_BENCHMARK = STEP_BENCHMARK / STEPS_PER_ACTIVE_MIN; // 270
+
+type WeekUnit = 'km' | 'steps' | 'min';
+
+const UNIT_LABEL: Record<WeekUnit, string> = {
+  km: 'Distance',
+  steps: 'Steps',
+  min: 'Active',
+};
+
+function valueForUnit(d: DayStat, u: WeekUnit): number {
+  if (u === 'steps') return d.steps;
+  if (u === 'min') return d.activeMinutes;
+  return d.distanceKm;
+}
+
+function benchmarkForUnit(u: WeekUnit): number {
+  if (u === 'steps') return STEP_BENCHMARK;
+  if (u === 'min') return MIN_BENCHMARK;
+  return KM_BENCHMARK;
+}
+
+function formatTotal(n: number, u: WeekUnit): string {
+  if (u === 'steps') return `${Math.round(n).toLocaleString()} steps`;
+  if (u === 'min') return `${Math.round(n)} min`;
+  return `${n.toFixed(1)} km`;
+}
 
 export default function Home() {
   const router = useRouter();
@@ -64,7 +102,9 @@ export default function Home() {
   const loadHome = useCallback(async () => {
     if (!userId) return;
     try {
-      const res = await apiGet<HomePayload>('/api/home');
+      const res = await apiGet<HomePayload>(
+        `/api/home?today=${encodeURIComponent(todayLocal())}`,
+      );
       setHome(res);
     } catch (e) {
       console.warn('home load failed', e);
@@ -225,21 +265,68 @@ export default function Home() {
   const today = home?.today;
   const week = home?.week ?? [];
   const todayIdx = home?.todayIdx ?? 0;
-  // Ring + side stats reflect step-counter data only — never logged walks.
-  // Logged walks roll up into the weekly bar chart and stats, but the ring
-  // stays a pure pedometer view. Sensor reading takes priority; server's
-  // recorded step count is the fallback before the first sensor event.
-  const displaySteps = liveSteps ?? today?.steps ?? 0;
-  const displayDistanceKm = stepsToDistanceKm(displaySteps);
-  const displayActiveMinutes = Math.round(displaySteps / STEPS_PER_ACTIVE_MIN);
+
+  // Selected day — defaults to today, switches when the user taps a bar.
+  // Re-pin to today whenever a fresh payload arrives, so a refresh after
+  // midnight rolls the selection forward to the new "today".
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  useEffect(() => {
+    setSelectedIdx(null);
+  }, [home?.todayIdx, home?.week?.[0]?.date]);
+  const activeIdx = selectedIdx ?? todayIdx;
+  const isToday = activeIdx === todayIdx;
+  const selectedDay = week[activeIdx];
+
+  // Ring + side stats reflect step-counter data when viewing today; for any
+  // other day they read straight from the server-recorded daily totals so
+  // the user can scrub through the week and see each day's numbers.
+  const displaySteps = isToday
+    ? (liveSteps ?? today?.steps ?? 0)
+    : (selectedDay?.steps ?? 0);
+  const displayDistanceKm = isToday
+    ? stepsToDistanceKm(liveSteps ?? today?.steps ?? 0)
+    : (selectedDay?.distanceKm ?? 0);
+  const displayActiveMinutes = isToday
+    ? Math.round((liveSteps ?? today?.steps ?? 0) / STEPS_PER_ACTIVE_MIN)
+    : (selectedDay?.activeMinutes ?? 0);
   const paceKmh =
     displayActiveMinutes > 0
       ? displayDistanceKm / (displayActiveMinutes / 60)
       : 0;
-  const weekTotal = week.reduce((s, w) => s + w.distanceKm, 0);
-  const noWalksYet = !!home && weekTotal === 0;
-  const weekMax = Math.max(1, ...week.map((w) => w.distanceKm));
-  const ringValue = Math.min(1, displayDistanceKm / DAILY_GOAL_KM);
+  // Unit picked in the chip-row under the weekly card. Affects bars + total
+  // only; ring + side stats are independent.
+  const [weekUnit, setWeekUnit] = useState<WeekUnit>('km');
+  const weekValues = week.map((w) => valueForUnit(w, weekUnit));
+  const weekTotal = weekValues.reduce((s, v) => s + v, 0);
+  const noWalksYet = !!home && week.reduce((s, w) => s + w.distanceKm, 0) === 0;
+  const benchmark = benchmarkForUnit(weekUnit);
+  // Bars scale to the larger of the benchmark or the week's max so a
+  // benchmark-busting day still has a sensible bar height.
+  const weekMax = Math.max(benchmark, ...weekValues);
+  // Ring value is the day's km against the 20km benchmark. The ring itself
+  // draws an overflow arc past 100% — no clamping here.
+  const ringValue = displayDistanceKm / KM_BENCHMARK;
+  const overBenchmarkKm = Math.max(0, displayDistanceKm - KM_BENCHMARK);
+
+  // Week highlights — purely derived facts, no settings. Fills the gap
+  // beneath the weekly card without re-introducing goal-shaped UI.
+  const dayShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const activeDays = week.filter(
+    (w, i) => i <= todayIdx && w.distanceKm > 0,
+  ).length;
+  const bestIdx = week.reduce(
+    (best, w, i) =>
+      i <= todayIdx && w.distanceKm > week[best].distanceKm ? i : best,
+    0,
+  );
+  const bestDay = week[bestIdx];
+  const hasBest = !!bestDay && bestDay.distanceKm > 0;
+  // Current streak: count back from today over consecutive active days.
+  let streak = 0;
+  for (let i = todayIdx; i >= 0; i--) {
+    if (week[i] && week[i].distanceKm > 0) streak++;
+    else break;
+  }
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -268,14 +355,25 @@ export default function Home() {
           <>
             <View style={styles.ringRow}>
               <ProgressRing size={200} stroke={13} value={ringValue}>
-                <Text style={styles.ringEyebrow}>Today</Text>
+                <Text style={styles.ringEyebrow}>
+                  {isToday
+                    ? 'Today'
+                    : new Date(`${selectedDay?.date}T12:00`).toLocaleDateString(
+                        undefined,
+                        { weekday: 'short', month: 'short', day: 'numeric' },
+                      )}
+                </Text>
                 <View style={styles.ringMetric}>
                   <Text style={styles.ringValue}>
                     {displayDistanceKm.toFixed(1)}
                   </Text>
                   <Text style={styles.ringUnit}>km</Text>
                 </View>
-                <Text style={styles.ringGoal}>of {DAILY_GOAL_KM} km goal</Text>
+                {overBenchmarkKm > 0 && (
+                  <Text style={styles.ringOver}>
+                    +{overBenchmarkKm.toFixed(1)} km past {KM_BENCHMARK}
+                  </Text>
+                )}
               </ProgressRing>
 
               <View style={styles.sideStats}>
@@ -301,17 +399,28 @@ export default function Home() {
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>This week</Text>
-                <Text style={styles.cardTotal}>{weekTotal.toFixed(1)} km</Text>
+                <Text style={styles.cardTotal}>
+                  {formatTotal(weekTotal, weekUnit)}
+                </Text>
               </View>
 
               <View style={styles.bars}>
                 {week.map((w, i) => {
-                  const isToday = i === todayIdx;
+                  const v = weekValues[i];
+                  const isTodayBar = i === todayIdx;
                   const isFuture = i > todayIdx;
-                  const h = Math.max(6, (w.distanceKm / weekMax) * 78);
-                  const bg = isFuture
+                  const isSelected = i === activeIdx;
+                  const totalH = Math.max(6, (v / weekMax) * 78);
+                  // Split the bar at the benchmark — base segment is teal up
+                  // to the threshold, accent segment rides on top for any
+                  // overage. Threshold scales with the chosen unit.
+                  const baseV = Math.min(benchmark, v);
+                  const overV = Math.max(0, v - benchmark);
+                  const baseH = (baseV / weekMax) * 78;
+                  const overH = (overV / weekMax) * 78;
+                  const baseColor = isFuture
                     ? '#F0F0EC'
-                    : isToday
+                    : isTodayBar
                       ? colors.teal
                       : '#6EBFA0';
                   return (
@@ -319,15 +428,54 @@ export default function Home() {
                       key={i}
                       style={styles.barCol}
                       disabled={isFuture}
-                      onPress={() => router.push('/(tabs)/stats')}
+                      onPress={() => setSelectedIdx(i)}
                       hitSlop={8}
                     >
+                      {v === 0 ? (
+                        <View
+                          style={{
+                            width: '100%',
+                            height: totalH,
+                            borderRadius: 4,
+                            backgroundColor: baseColor,
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: '100%',
+                            height: totalH,
+                            borderRadius: 4,
+                            overflow: 'hidden',
+                            flexDirection: 'column-reverse',
+                          }}
+                        >
+                          <View
+                            style={{
+                              height: baseH,
+                              backgroundColor: baseColor,
+                            }}
+                          />
+                          {overH > 0 && (
+                            <View
+                              style={{
+                                height: overH,
+                                backgroundColor: colors.amber,
+                              }}
+                            />
+                          )}
+                        </View>
+                      )}
+                      {/* Selection indicator — small dot under the bar. */}
                       <View
                         style={{
-                          width: '100%',
-                          height: h,
-                          borderRadius: 4,
-                          backgroundColor: bg,
+                          marginTop: 4,
+                          width: 4,
+                          height: 4,
+                          borderRadius: 2,
+                          backgroundColor: isSelected
+                            ? colors.ink
+                            : 'transparent',
                         }}
                       />
                     </Pressable>
@@ -341,7 +489,7 @@ export default function Home() {
                     key={i}
                     style={[
                       styles.dayLabel,
-                      i === todayIdx && {
+                      i === activeIdx && {
                         color: colors.ink,
                         fontWeight: '500',
                       },
@@ -351,18 +499,81 @@ export default function Home() {
                   </Text>
                 ))}
               </View>
+
+              {/* Unit selector lives inside the card so it reads as part of
+                  the same surface — no orphan floating row below. */}
+              <View style={styles.unitRow}>
+                {(['km', 'steps', 'min'] as const).map((u) => {
+                  const active = u === weekUnit;
+                  return (
+                    <Pressable
+                      key={u}
+                      onPress={() => setWeekUnit(u)}
+                      hitSlop={6}
+                      style={[
+                        styles.unitChip,
+                        active && styles.unitChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.unitChipText,
+                          active && styles.unitChipTextActive,
+                        ]}
+                      >
+                        {UNIT_LABEL[u]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
-            {noWalksYet && (
-              <View style={styles.emptyNudge}>
-                <Text style={styles.emptyNudgeTitle}>
-                  Log your first walk
-                </Text>
-                <Text style={styles.emptyNudgeBody}>
-                  Tap the green button to add how far you walked. Your circle
-                  will see the progress on the leaderboard.
-                </Text>
+            {hasBest ? (
+              <View style={styles.highlights}>
+                <View style={styles.highlightCell}>
+                  <Text style={styles.highlightLabel}>Best day</Text>
+                  <Text style={styles.highlightValue}>
+                    {bestDay.distanceKm.toFixed(1)}
+                    <Text style={styles.highlightUnit}> km</Text>
+                  </Text>
+                  <Text style={styles.highlightSub}>{dayShort[bestIdx]}</Text>
+                </View>
+                <View style={styles.highlightDivider} />
+                <View style={styles.highlightCell}>
+                  <Text style={styles.highlightLabel}>Active days</Text>
+                  <Text style={styles.highlightValue}>
+                    {activeDays}
+                    <Text style={styles.highlightUnit}> / 7</Text>
+                  </Text>
+                  <Text style={styles.highlightSub}>this week</Text>
+                </View>
+                <View style={styles.highlightDivider} />
+                <View style={styles.highlightCell}>
+                  <Text style={styles.highlightLabel}>Streak</Text>
+                  <Text style={styles.highlightValue}>
+                    {streak}
+                    <Text style={styles.highlightUnit}>
+                      {streak === 1 ? ' day' : ' days'}
+                    </Text>
+                  </Text>
+                  <Text style={styles.highlightSub}>
+                    {streak > 0 ? 'in a row' : 'start today'}
+                  </Text>
+                </View>
               </View>
+            ) : (
+              noWalksYet && (
+                <View style={styles.emptyNudge}>
+                  <Text style={styles.emptyNudgeTitle}>
+                    Keep your phone on you
+                  </Text>
+                  <Text style={styles.emptyNudgeBody}>
+                    Steps tracked automatically while you walk. Your circle
+                    sees the progress on the leaderboard.
+                  </Text>
+                </View>
+              )
             )}
 
             {comparison && (
@@ -404,25 +615,10 @@ export default function Home() {
               </Pressable>
             )}
 
-            <View style={{ height: 90 }} />
+            <View style={{ height: 32 }} />
           </>
         )}
       </ScrollView>
-
-      {/* Floating action: Log walk only — step sync runs automatically. */}
-      <View style={styles.fabRow}>
-        <Pressable
-          style={styles.fab}
-          onPress={() => {
-            tapMedium();
-            router.push('/log-walk');
-          }}
-        >
-          <Text style={styles.fabPlus}>＋</Text>
-          <Text style={styles.fabLabel}>Log walk</Text>
-        </Pressable>
-      </View>
-
     </SafeAreaView>
   );
 }
@@ -479,7 +675,7 @@ function SideStat({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   content: { paddingBottom: 24 },
-  header: { paddingHorizontal: 24, paddingTop: 18, paddingBottom: 20 },
+  header: { paddingHorizontal: 24, paddingTop: 14, paddingBottom: 12 },
   date: {
     fontSize: 13,
     color: colors.muted,
@@ -497,8 +693,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 24,
+    paddingTop: 4,
+    paddingBottom: 18,
     gap: 16,
   },
   ringEyebrow: {
@@ -522,6 +718,13 @@ const styles = StyleSheet.create({
   },
   ringUnit: { fontSize: 17, color: colors.muted },
   ringGoal: { fontSize: 12, color: colors.faint, marginTop: 6 },
+  ringOver: {
+    fontSize: 12,
+    color: colors.amberDeep,
+    marginTop: 6,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+  },
   sideStats: { flexDirection: 'column', gap: 18, minWidth: 92 },
   hr: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line },
   sideLabel: {
@@ -541,10 +744,10 @@ const styles = StyleSheet.create({
   sideUnit: { fontSize: 12, color: colors.muted },
   card: {
     marginHorizontal: 20,
-    marginBottom: 14,
+    marginBottom: 12,
     paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 16,
+    paddingTop: 16,
+    paddingBottom: 14,
     backgroundColor: colors.card,
     borderRadius: 12,
   },
@@ -552,7 +755,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 14,
   },
   cardTitle: {
     fontSize: 14,
@@ -685,6 +888,75 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 4,
     backgroundColor: colors.lineSoft,
+  },
+  unitRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+  },
+  unitChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'transparent',
+  },
+  unitChipActive: {
+    backgroundColor: colors.tealSoft,
+  },
+  unitChipText: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: '500',
+    letterSpacing: -0.1,
+  },
+  unitChipTextActive: { color: colors.teal },
+  highlights: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 16,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    alignItems: 'stretch',
+  },
+  highlightCell: {
+    flex: 1,
+    alignItems: 'flex-start',
+    paddingHorizontal: 8,
+  },
+  highlightDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line,
+  },
+  highlightLabel: {
+    fontSize: 10,
+    color: colors.muted,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  highlightValue: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: colors.ink,
+    letterSpacing: -0.6,
+    fontVariant: ['tabular-nums'],
+  },
+  highlightUnit: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: colors.muted,
+    letterSpacing: 0,
+  },
+  highlightSub: {
+    fontSize: 11,
+    color: colors.faint,
+    marginTop: 2,
   },
   emptyNudge: {
     marginHorizontal: 20,

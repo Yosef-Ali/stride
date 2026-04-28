@@ -20,7 +20,6 @@ type Me = {
   email: string;
   name: string;
   avatarColor: string;
-  weeklyGoalKm: string;
 };
 
 type Circle = {
@@ -29,10 +28,6 @@ type Circle = {
   inviteCode: string;
   createdBy: string;
 };
-
-const GOAL_STEP = 5;
-const GOAL_MIN = 5;
-const GOAL_MAX = 150;
 
 export default function MeTab() {
   const router = useRouter();
@@ -98,18 +93,7 @@ export default function MeTab() {
     setEditingName(false);
   }
 
-  async function setGoal(delta: number) {
-    if (!me) return;
-    const current = Number(me.weeklyGoalKm);
-    const next = Math.min(
-      GOAL_MAX,
-      Math.max(GOAL_MIN, Math.round((current + delta) / GOAL_STEP) * GOAL_STEP),
-    );
-    if (next === current) return;
-    await patch({ weeklyGoalKm: next.toFixed(2) });
-  }
-
-  function confirmLeave(c: Circle) {
+function confirmLeave(c: Circle) {
     if (c.createdBy === userId) {
       Alert.alert(
         'Owner can’t leave',
@@ -186,8 +170,6 @@ export default function MeTab() {
     );
   }
 
-  const goal = Number(me.weeklyGoalKm);
-
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -247,31 +229,6 @@ export default function MeTab() {
                 />
               );
             })}
-          </View>
-        </View>
-
-        {/* Weekly goal */}
-        <Text style={styles.sectionLabel}>Weekly goal</Text>
-        <View style={styles.card}>
-          <View style={styles.goalRow}>
-            <Pressable
-              style={[styles.stepper, goal <= GOAL_MIN && styles.stepperDisabled]}
-              disabled={goal <= GOAL_MIN || saving}
-              onPress={() => setGoal(-GOAL_STEP)}
-            >
-              <Text style={styles.stepperLabel}>−</Text>
-            </Pressable>
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={styles.goalValue}>{goal.toFixed(0)}</Text>
-              <Text style={styles.goalUnit}>km / week</Text>
-            </View>
-            <Pressable
-              style={[styles.stepper, goal >= GOAL_MAX && styles.stepperDisabled]}
-              disabled={goal >= GOAL_MAX || saving}
-              onPress={() => setGoal(GOAL_STEP)}
-            >
-              <Text style={styles.stepperLabel}>+</Text>
-            </Pressable>
           </View>
         </View>
 
@@ -431,30 +388,6 @@ const styles = StyleSheet.create({
     borderColor: colors.ink,
     transform: [{ scale: 1.12 }],
   },
-  goalRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stepper: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.tealSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepperDisabled: { opacity: 0.4 },
-  stepperLabel: {
-    color: colors.teal,
-    fontSize: 22,
-    fontWeight: '500',
-    lineHeight: 24,
-  },
-  goalValue: {
-    fontSize: 36,
-    fontWeight: '500',
-    color: colors.ink,
-    letterSpacing: -1,
-    fontVariant: ['tabular-nums'],
-  },
-  goalUnit: { fontSize: 12, color: colors.muted, marginTop: 2 },
   circleRow: {
     flexDirection: 'row',
     alignItems: 'center',

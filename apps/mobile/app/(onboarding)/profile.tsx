@@ -7,13 +7,12 @@ import {
   PrimaryCTA,
   Sub,
 } from '../../src/components/onboarding/OnboardingShell';
-import { GoalSlider } from '../../src/components/onboarding/GoalSlider';
 import { useOnboarding } from '../../src/stores/onboarding';
 import { colors } from '../../src/lib/tokens';
 
 export default function Profile() {
   const router = useRouter();
-  const { name, weeklyGoalKm, setName, setGoal } = useOnboarding();
+  const { name, setName } = useOnboarding();
   const canContinue = name.trim().length > 0;
 
   return (
@@ -28,8 +27,8 @@ export default function Profile() {
       }
     >
       <View style={{ paddingTop: 40 }}>
-        <Heading>A little about you</Heading>
-        <Sub>So we can tailor your goal and greeting.</Sub>
+        <Heading>What should we call you?</Heading>
+        <Sub>Used for your greeting and on the circle leaderboard.</Sub>
       </View>
 
       <View style={styles.fields}>
@@ -48,13 +47,6 @@ export default function Profile() {
               selectionColor={colors.teal}
               cursorColor={colors.teal}
             />
-          </View>
-        </View>
-
-        <View style={styles.field}>
-          <Eyebrow>Weekly goal</Eyebrow>
-          <View style={styles.cardWrap}>
-            <GoalSlider value={weeklyGoalKm} onChange={setGoal} />
           </View>
         </View>
       </View>
@@ -77,10 +69,5 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: colors.ink,
     letterSpacing: -0.2,
-  },
-  cardWrap: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 18,
   },
 });

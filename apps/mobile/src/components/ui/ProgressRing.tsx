@@ -8,6 +8,8 @@ export type ProgressRingProps = {
   stroke?: number;
   value?: number;
   color?: string;
+  /** Arc color used for the portion past 100% (when value > 1). */
+  overColor?: string;
   track?: string;
   children?: React.ReactNode;
   style?: ViewStyle;
@@ -18,14 +20,22 @@ export function ProgressRing({
   stroke = 13,
   value = 0,
   color = colors.teal,
+  overColor = colors.amber,
   track = '#EEEEEA',
   children,
   style,
 }: ProgressRingProps) {
-  const clamped = Math.max(0, Math.min(1, value));
+  const safe = Number.isFinite(value) ? Math.max(0, value) : 0;
+  // Base arc fills the first lap; once past goal the base ring becomes the
+  // "completed" track and the overflow arc rides on top in an accent color.
+  const isOver = safe > 1;
+  const baseFill = isOver ? 1 : safe;
+  // Cap the visible overflow at one full extra lap so a runaway day can't
+  // visually wrap around again — a single accent ring + numeric caption is
+  // enough signal.
+  const overFill = isOver ? Math.min(1, safe - 1) : 0;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const offset = c * (1 - clamped);
   const center = size / 2;
 
   return (
@@ -51,9 +61,22 @@ export function ProgressRing({
           strokeWidth={stroke}
           fill="none"
           strokeDasharray={`${c} ${c}`}
-          strokeDashoffset={offset}
+          strokeDashoffset={c * (1 - baseFill)}
           strokeLinecap="round"
         />
+        {overFill > 0 && (
+          <Circle
+            cx={center}
+            cy={center}
+            r={r}
+            stroke={overColor}
+            strokeWidth={stroke}
+            fill="none"
+            strokeDasharray={`${c} ${c}`}
+            strokeDashoffset={c * (1 - overFill)}
+            strokeLinecap="round"
+          />
+        )}
       </Svg>
       <View
         pointerEvents="none"
