@@ -1,0 +1,20 @@
+# Hide the monorepo workspace markers from EAS so it treats
+# apps/mobile as a standalone npm project. Without this, EAS sees
+# pnpm-workspace.yaml + root package.json, runs `npm ci` at the
+# repo root, hoists deps to /node_modules, and leaves
+# apps/mobile/node_modules empty — `expo config` then fails to
+# resolve its plugins.
+#
+# Patterns are anchored to the repo root (leading /) so we don't
+# accidentally hide apps/mobile/package.json.
+
+/package.json
+/package-lock.json
+/pnpm-lock.yaml
+/pnpm-workspace.yaml
+/node_modules
+/api
+/packages
+/.vercel
+/dist
+/.next
