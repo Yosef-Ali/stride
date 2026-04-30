@@ -35,7 +35,7 @@
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.2",
     "resend": "^6.12.2",
-    "stride-steps": "link:./modules/stride-steps",
+    "stride-steps": "file:./modules/stride-steps",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
