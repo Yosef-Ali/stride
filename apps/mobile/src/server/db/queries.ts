@@ -346,6 +346,28 @@ export async function joinCircleByCode(
 
   if (!circle) return null;
 
+  const [existing] = await db
+    .select({ userId: circleMembers.userId })
+    .from(circleMembers)
+    .where(
+      and(
+        eq(circleMembers.circleId, circle.id),
+        eq(circleMembers.userId, actorId),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) {
+    const [{ count: memberCount }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(circleMembers)
+      .where(eq(circleMembers.circleId, circle.id));
+
+    if (memberCount >= 10) {
+      return { full: true as const };
+    }
+  }
+
   await db
     .insert(circleMembers)
     .values({ circleId: circle.id, userId: actorId })

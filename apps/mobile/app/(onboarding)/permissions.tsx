@@ -1,5 +1,7 @@
 import { useRouter } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
+import { Pedometer } from 'expo-sensors';
 import Svg, { Path, Rect } from 'react-native-svg';
 import {
   Heading,
@@ -12,14 +14,31 @@ import { colors } from '../../src/lib/tokens';
 
 export default function Permissions() {
   const router = useRouter();
+  const [requesting, setRequesting] = useState(false);
   const next = () => router.push('/(onboarding)/profile');
+
+  const allow = async () => {
+    if (requesting) return;
+    setRequesting(true);
+    try {
+      if (Platform.OS !== 'web') {
+        await Pedometer.requestPermissionsAsync();
+      }
+    } catch {
+      // user-denied or unsupported — continue regardless; sensor reads
+      // will surface the state later.
+    } finally {
+      setRequesting(false);
+      next();
+    }
+  };
 
   return (
     <OnboardingShell
       step={2}
       footer={
         <>
-          <PrimaryCTA label="Allow access" onPress={next} />
+          <PrimaryCTA label="Allow access" onPress={allow} />
           <LinkCTA label="Not now" muted onPress={next} />
         </>
       }

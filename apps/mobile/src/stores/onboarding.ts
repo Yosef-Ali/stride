@@ -4,13 +4,11 @@ export type CircleChoice = 'create' | 'join' | null;
 
 type OnboardingState = {
   name: string;
-  weeklyGoalKm: number;
   choice: CircleChoice;
   circleName: string;
   inviteCode: string | null;
 
   setName: (v: string) => void;
-  setGoal: (v: number) => void;
   setChoice: (v: CircleChoice) => void;
   setCircleName: (v: string) => void;
   setInviteCode: (v: string) => void;
@@ -19,7 +17,6 @@ type OnboardingState = {
 
 const initial = {
   name: '',
-  weeklyGoalKm: 40,
   choice: null as CircleChoice,
   circleName: '',
   inviteCode: null as string | null,
@@ -28,7 +25,6 @@ const initial = {
 export const useOnboarding = create<OnboardingState>((set) => ({
   ...initial,
   setName: (name) => set({ name }),
-  setGoal: (weeklyGoalKm) => set({ weeklyGoalKm }),
   setChoice: (choice) => set({ choice }),
   setCircleName: (circleName) => set({ circleName }),
   setInviteCode: (inviteCode) => set({ inviteCode }),

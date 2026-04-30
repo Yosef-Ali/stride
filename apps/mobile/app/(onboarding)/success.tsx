@@ -1,5 +1,7 @@
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import Svg, { Path, Rect } from 'react-native-svg';
 import {
   Heading,
@@ -14,6 +16,13 @@ export default function Success() {
   const router = useRouter();
   const { circleName, inviteCode } = useOnboarding();
   const link = `stride.app/c/${inviteCode ?? 'XXXXXXXX'}`;
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = async () => {
+    await Clipboard.setStringAsync(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   return (
     <OnboardingShell
@@ -53,7 +62,7 @@ export default function Success() {
               {link}
             </Text>
           </View>
-          <Pressable style={styles.copyBtn} onPress={() => {}}>
+          <Pressable style={styles.copyBtn} onPress={onCopy}>
             <Svg width={12} height={12} viewBox="0 0 16 16" fill="none">
               <Rect
                 x={5}
@@ -72,7 +81,7 @@ export default function Success() {
                 strokeLinejoin="round"
               />
             </Svg>
-            <Text style={styles.copyLabel}>Copy</Text>
+            <Text style={styles.copyLabel}>{copied ? 'Copied' : 'Copy'}</Text>
           </Pressable>
         </View>
       </View>

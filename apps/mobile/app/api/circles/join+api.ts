@@ -20,9 +20,12 @@ export async function POST(req: Request) {
   if (!code || code.length !== 8) return badRequest('invalid code');
 
   const db = getDb();
-  const circle = await queries.joinCircleByCode(db, actorId, code);
-  if (!circle) {
+  const result = await queries.joinCircleByCode(db, actorId, code);
+  if (!result) {
     return Response.json({ error: 'circle not found' }, { status: 404 });
   }
-  return Response.json({ circle });
+  if ('full' in result) {
+    return Response.json({ error: 'circle is full' }, { status: 409 });
+  }
+  return Response.json({ circle: result });
 }

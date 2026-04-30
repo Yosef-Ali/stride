@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   Eyebrow,
@@ -8,12 +9,28 @@ import {
   Sub,
 } from '../../src/components/onboarding/OnboardingShell';
 import { useOnboarding } from '../../src/stores/onboarding';
+import { apiPatch } from '../../src/lib/api';
 import { colors } from '../../src/lib/tokens';
 
 export default function Profile() {
   const router = useRouter();
   const { name, setName } = useOnboarding();
-  const canContinue = name.trim().length > 0;
+  const [saving, setSaving] = useState(false);
+  const canContinue = name.trim().length > 0 && !saving;
+
+  const onContinue = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    try {
+      await apiPatch('/api/me', { name: trimmed });
+    } catch {
+      // non-fatal: user can retry from settings later.
+    } finally {
+      setSaving(false);
+      router.push('/(onboarding)/circle');
+    }
+  };
 
   return (
     <OnboardingShell
@@ -22,7 +39,7 @@ export default function Profile() {
         <PrimaryCTA
           label="Continue"
           disabled={!canContinue}
-          onPress={() => router.push('/(onboarding)/circle')}
+          onPress={onContinue}
         />
       }
     >

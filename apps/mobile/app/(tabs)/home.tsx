@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ProgressRing } from '../../src/components/ui/ProgressRing';
@@ -87,6 +87,7 @@ function formatTotal(n: number, u: WeekUnit): string {
 
 export default function Home() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { userId, circleId, name: sessionName } = useSession();
   const name = sessionName?.trim() || 'friend';
 
@@ -199,7 +200,12 @@ export default function Home() {
     const post = async () => {
       const steps = liveStepsRef.current;
       if (steps == null || steps === 0) return;
-      const serverSteps = homeRef.current?.today?.steps ?? 0;
+      // Don't post until we've loaded the server baseline. Otherwise
+      // serverSteps falls back to 0 and we may push a count that the
+      // server already had from an earlier session.
+      const todayPayload = homeRef.current?.today;
+      if (!todayPayload) return;
+      const serverSteps = todayPayload.steps ?? 0;
       const now = Date.now();
       const delta = steps - lastPostedSteps.current;
       const shouldPost =
@@ -329,7 +335,9 @@ export default function Home() {
   }
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']}>
+    // Plain View so we can apply both top + bottom safe-area insets
+    // without nesting SafeAreaView (which would double-apply padding).
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -364,7 +372,12 @@ export default function Home() {
                       )}
                 </Text>
                 <View style={styles.ringMetric}>
-                  <Text style={styles.ringValue}>
+                  <Text
+                    style={styles.ringValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
+                  >
                     {displayDistanceKm.toFixed(1)}
                   </Text>
                   <Text style={styles.ringUnit}>km</Text>
@@ -376,24 +389,24 @@ export default function Home() {
                 )}
               </ProgressRing>
 
-              <View style={styles.sideStats}>
-                <SideStat
-                  label="Steps"
-                  value={displaySteps.toLocaleString()}
-                />
-                <View style={styles.hr} />
-                <SideStat
-                  label="Active"
-                  value={String(displayActiveMinutes)}
-                  unit="min"
-                />
-                <View style={styles.hr} />
-                <SideStat
-                  label="Pace"
-                  value={paceKmh.toFixed(1)}
-                  unit="km/h"
-                />
-              </View>
+<View style={styles.sideStats}>
+          <SideStat
+            label="Steps"
+            value={displaySteps.toLocaleString()}
+          />
+          <View style={styles.hr} />
+          <SideStat
+            label="Active"
+            value={String(displayActiveMinutes)}
+            unit="min"
+          />
+          <View style={styles.hr} />
+          <SideStat
+            label="Pace"
+            value={paceKmh.toFixed(1)}
+            unit="km/h"
+          />
+        </View>
             </View>
 
             <View style={styles.card}>
@@ -619,7 +632,7 @@ export default function Home() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -710,11 +723,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   ringValue: {
-    fontSize: 52,
+    fontSize: 44,
     fontWeight: '500',
     color: colors.ink,
-    letterSpacing: -2,
-    lineHeight: 56,
+    letterSpacing: -1.5,
+    lineHeight: 48,
   },
   ringUnit: { fontSize: 17, color: colors.muted },
   ringGoal: { fontSize: 12, color: colors.faint, marginTop: 6 },
@@ -804,48 +817,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   compareBody: { fontSize: 15, color: colors.ink, letterSpacing: -0.2 },
-  fabRow: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  fab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    backgroundColor: colors.teal,
-    borderRadius: 999,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
-  fabPlus: { color: '#fff', fontSize: 22, fontWeight: '500', lineHeight: 24 },
-  fabLabel: { color: '#fff', fontSize: 15, fontWeight: '500' },
-  syncFab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.line,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
-  syncIcon: { color: colors.teal, fontSize: 18, fontWeight: '600' },
-  syncLabel: { color: colors.ink, fontSize: 14, fontWeight: '500' },
   skelRingRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -7,8 +7,10 @@ import { getDb } from '../../../src/server/context';
  * is a no-op thanks to the weekly_wins unique constraint.
  *
  * Auth: `authorization: Bearer <CRON_SECRET>` OR `x-cron-secret: <CRON_SECRET>`.
+ *
+ * NOTE: Vercel Cron only fires GET, so both GET and POST are exported.
  */
-export async function POST(req: Request) {
+async function run(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
     return Response.json(
@@ -28,3 +30,6 @@ export async function POST(req: Request) {
   const summary = await queries.crownWeeklyWinners(db);
   return Response.json(summary);
 }
+
+export const GET = run;
+export const POST = run;

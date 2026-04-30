@@ -1,0 +1,22 @@
+[
+    {
+        "merged": "expo.modules.stridesteps.stride-steps-release-10:/layout/notification_template_part_time.xml",
+        "source": "expo.modules.stridesteps.stride-steps-core-1.13.0-3:/layout/notification_template_part_time.xml"
+    },
+    {
+        "merged": "expo.modules.stridesteps.stride-steps-release-10:/layout/ime_base_split_test_activity.xml",
+        "source": "expo.modules.stridesteps.stride-steps-core-1.13.0-3:/layout/ime_base_split_test_activity.xml"
+    },
+    {
+        "merged": "expo.modules.stridesteps.stride-steps-release-10:/layout/notification_template_part_chronometer.xml",
+        "source": "expo.modules.stridesteps.stride-steps-core-1.13.0-3:/layout/notification_template_part_chronometer.xml"
+    },
+    {
+        "merged": "expo.modules.stridesteps.stride-steps-release-10:/layout/custom_dialog.xml",
+        "source": "expo.modules.stridesteps.stride-steps-core-1.13.0-3:/layout/custom_dialog.xml"
+    },
+    {
+        "merged": "expo.modules.stridesteps.stride-steps-release-10:/layout/ime_secondary_split_test_activity.xml",
+        "source": "expo.modules.stridesteps.stride-steps-core-1.13.0-3:/layout/ime_secondary_split_test_activity.xml"
+    }
+]
