@@ -1,11 +1,15 @@
 package expo.modules.stridesteps
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 
 /**
  * Process-wide owner of the `Sensor.TYPE_STEP_COUNTER` listener. Both
@@ -29,12 +33,22 @@ internal object StepSensorBridge {
   private var listener: SensorEventListener? = null
   private var refCount: Int = 0
 
-  /** Returns false if the device has no step-counter sensor. */
+  /**
+   * Returns false if the device has no step-counter sensor, or if
+   * ACTIVITY_RECOGNITION hasn't been granted yet. Callers are expected
+   * to retry after the user accepts the runtime permission — registering
+   * pre-grant on Android 10+ produces a sticky listener that never fires
+   * even after the permission flips, so we defer entirely.
+   */
   @Synchronized
   fun acquire(context: Context): Boolean {
     if (listener != null) {
       refCount++
       return true
+    }
+    if (!hasActivityRecognitionPermission(context)) {
+      Log.d(TAG, "acquire skipped — ACTIVITY_RECOGNITION not granted yet")
+      return false
     }
     val sm = context.applicationContext
       .getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return false
@@ -63,6 +77,17 @@ internal object StepSensorBridge {
     refCount = 1
     Log.d(TAG, "STEP_COUNTER listener registered")
     return true
+  }
+
+  private fun hasActivityRecognitionPermission(context: Context): Boolean {
+    // ACTIVITY_RECOGNITION runtime permission was added in Android 10
+    // (API 29). Older versions implicitly grant it via manifest entry.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+    val granted = ContextCompat.checkSelfPermission(
+      context,
+      Manifest.permission.ACTIVITY_RECOGNITION,
+    )
+    return granted == PackageManager.PERMISSION_GRANTED
   }
 
   @Synchronized

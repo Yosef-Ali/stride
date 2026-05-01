@@ -21,6 +21,16 @@ type StrideStepsModule = {
   getCumulativeStepsAsync(): Promise<number>;
 
   /**
+   * Register the native STEP_COUNTER sensor listener. Idempotent —
+   * bumps a refcount on repeated calls. Returns false if the device
+   * has no step counter or if ACTIVITY_RECOGNITION isn't granted yet
+   * (caller should prompt for permission and retry). Use this after
+   * a runtime permission grant to recover from a pre-grant boot where
+   * the module's eager OnCreate acquire was a no-op.
+   */
+  acquireSensorAsync(): Promise<boolean>;
+
+  /**
    * Start a foreground service that holds the step-counter subscription
    * even when the app is backgrounded or Samsung's Freecess tries to put
    * us to sleep. Shows a low-priority persistent notification ("Stride
@@ -68,6 +78,11 @@ export async function getCumulativeStepsAsync(): Promise<number> {
     throw err;
   }
   return native.getCumulativeStepsAsync();
+}
+
+export async function acquireSensorAsync(): Promise<boolean> {
+  if (!native) return false;
+  return native.acquireSensorAsync();
 }
 
 export async function startBackgroundTrackingAsync(): Promise<void> {

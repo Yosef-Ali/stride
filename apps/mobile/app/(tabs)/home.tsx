@@ -16,6 +16,7 @@ import { ProgressRing } from '../../src/components/ui/ProgressRing';
 import { useSession } from '../../src/stores/session';
 import { apiGet, apiPost } from '../../src/lib/api';
 import { formatLongDate, greet } from '../../src/lib/mock-data';
+import { Pedometer } from 'expo-sensors';
 import {
   STEPS_PER_ACTIVE_MIN,
   STEPS_PER_KM,
@@ -24,7 +25,11 @@ import {
   stepsToDistanceKm,
   todayLocal,
 } from '../../src/lib/pedometer';
-import { addStepCounterListener } from 'stride-steps';
+import {
+  acquireSensorAsync,
+  addStepCounterListener,
+  startBackgroundTrackingAsync,
+} from 'stride-steps';
 import { colors } from '../../src/lib/tokens';
 
 type LeaderRow = {
@@ -125,47 +130,99 @@ export default function Home() {
     }, [loadHome]),
   );
 
-  // STEP_COUNTER push events. Samsung delivers them at SENSOR_DELAY_FASTEST,
-  // which on some devices is 5-10 events/sec while walking. Pushing every
-  // event into setState re-renders the SVG ring at sensor cadence and reads
-  // as visible flicker on slower phones — so we coalesce: skip identical
-  // values, and rate-limit to ~2 visual updates/sec.
+  // Single Android effect that ties together permission, push-event
+  // subscription, foreground service, and AppState seeding.
+  //
+  // Order matters here. On Android 14+, the FOREGROUND_SERVICE_TYPE_HEALTH
+  // service requires ACTIVITY_RECOGNITION to already be granted, otherwise
+  // startForeground() throws and the service never holds the sensor alive.
+  // On Android 10+, registering a STEP_COUNTER listener before grant means
+  // events never fire on many Samsung ROMs (registration is sticky). So we:
+  //   1) request permission first;
+  //   2) only then attach the JS push listener;
+  //   3) only then start the foreground service;
+  //   4) seed from the cached cumulative count.
+  // We also retry the whole sequence on AppState 'active' so a user who
+  // grants permission later (via system Settings) recovers without a
+  // restart.
   const homeRef = useRef<HomePayload | null>(null);
   useEffect(() => {
     homeRef.current = home;
   }, [home]);
   const lastUpdateAtRef = useRef(0);
   const lastStepsRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const sub = addStepCounterListener(async (event) => {
-      try {
-        const { steps } = await computeTodayStepsFromCumulative(
-          event.cumulative,
-        );
-        if (steps === lastStepsRef.current) return;
-        const now = Date.now();
-        if (now - lastUpdateAtRef.current < 500) return;
-        lastUpdateAtRef.current = now;
-        lastStepsRef.current = steps;
-        setLiveSteps(steps);
-      } catch {
-        // server post on next tick will catch up
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
-  // Initial seed on mount + on AppState 'active'. Push events take over from
-  // there; we don't need to re-poll the sensor on a timer. Guard against
-  // concurrent seed() calls — the permission prompt itself fires AppState
-  // 'active' on dismissal, which would otherwise stack a second seed on top
-  // of the first one mid-await.
   const liveStepsRef = useRef<number | null>(null);
   useEffect(() => {
     liveStepsRef.current = liveSteps;
   }, [liveSteps]);
+
   useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    let cancelled = false;
+    let sub: { remove: () => void } | null = null;
+    let started = false;
+    let inFlight = false;
+
+    const start = async () => {
+      if (inFlight || started || cancelled) return;
+      inFlight = true;
+      try {
+        const perm = await Pedometer.requestPermissionsAsync();
+        if (cancelled) return;
+        if (!perm.granted) return;
+
+        // Permission is now confirmed — explicitly tell the native side
+        // to register the STEP_COUNTER listener (the OnCreate eager
+        // acquire is a no-op pre-grant), then attach the JS subscriber
+        // and start the foreground service.
+        await acquireSensorAsync().catch(() => false);
+        sub = addStepCounterListener(async (event) => {
+          try {
+            const { steps } = await computeTodayStepsFromCumulative(
+              event.cumulative,
+            );
+            if (steps === lastStepsRef.current) return;
+            const now = Date.now();
+            if (now - lastUpdateAtRef.current < 500) return;
+            lastUpdateAtRef.current = now;
+            lastStepsRef.current = steps;
+            setLiveSteps(steps);
+          } catch {
+            // server post on next tick will catch up
+          }
+        });
+        startBackgroundTrackingAsync().catch(() => {});
+
+        // Seed the UI from the latest cached cumulative reading so we
+        // don't sit on 0 until the user takes their next step.
+        const result = await readTodaysActivity();
+        if (cancelled || !result.ok) return;
+        if (result.steps === lastStepsRef.current) return;
+        lastStepsRef.current = result.steps;
+        setLiveSteps(result.steps);
+
+        started = true;
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    start();
+    const appSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') start();
+    });
+    return () => {
+      cancelled = true;
+      sub?.remove();
+      appSub.remove();
+    };
+  }, []);
+
+  // iOS / web: still seed from expo-sensors (the only path on those
+  // platforms today). No push listener and no foreground service —
+  // those are Android-specific.
+  useEffect(() => {
+    if (Platform.OS === 'android') return;
     let cancelled = false;
     let inFlight = false;
     const seed = async () => {

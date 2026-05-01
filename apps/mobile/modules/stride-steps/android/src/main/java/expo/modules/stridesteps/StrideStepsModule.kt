@@ -27,8 +27,9 @@ class StrideStepsModule : Module() {
     Events(EVENT_COUNTER)
 
     OnCreate {
-      // Wire the bridge to JS. Acquire the sensor too so the listener
-      // is alive even if the user never starts the foreground service.
+      // Wire the bridge to JS. Best-effort acquire — succeeds only if
+      // ACTIVITY_RECOGNITION is already granted; otherwise it's a no-op
+      // and JS must call acquireSensorAsync after prompting.
       StepSensorBridge.sink = { value ->
         try {
           sendEvent(EVENT_COUNTER, mapOf("cumulative" to value))
@@ -97,6 +98,20 @@ class StrideStepsModule : Module() {
           )
         }
       }, 30_000)
+    }
+
+    AsyncFunction("acquireSensorAsync") { promise: Promise ->
+      val context = appContext.reactContext
+      if (context == null) {
+        promise.reject("ERR_NO_CONTEXT", "React context unavailable", null)
+        return@AsyncFunction
+      }
+      // Bumps the bridge refcount so the sensor stays registered while
+      // the app is in the foreground. Idempotent. Returns false if the
+      // device has no step counter or ACTIVITY_RECOGNITION isn't yet
+      // granted — JS should prompt and retry.
+      val ok = StepSensorBridge.acquire(context)
+      promise.resolve(ok)
     }
 
     AsyncFunction("startBackgroundTrackingAsync") { promise: Promise ->
