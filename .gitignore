@@ -13,3 +13,4 @@ apps/*/dist
 .vercel
 .env*.local
 apps/**/android/build/
+.claude/
