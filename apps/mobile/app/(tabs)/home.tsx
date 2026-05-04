@@ -402,6 +402,7 @@ export default function Home() {
   // Ring + side stats reflect step-counter data when viewing today; for any
   // other day they read straight from the server-recorded daily totals so
   // the user can scrub through the week and see each day's numbers.
+  //
   const displaySteps = isToday
     ? (liveSteps ?? today?.steps ?? 0)
     : (selectedDay?.steps ?? 0);
@@ -498,6 +499,9 @@ export default function Home() {
                   </Text>
                   <Text style={styles.ringUnit}>km</Text>
                 </View>
+                <Text style={styles.ringSteps}>
+                  {displaySteps.toLocaleString()} steps
+                </Text>
                 {overBenchmarkKm > 0 && (
                   <Text style={styles.ringOver}>
                     +{overBenchmarkKm.toFixed(1)} km past {KM_BENCHMARK}
@@ -644,14 +648,15 @@ export default function Home() {
                         active && styles.unitChipActive,
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.unitChipText,
-                          active && styles.unitChipTextActive,
-                        ]}
-                      >
-                        {UNIT_LABEL[u]}
-                      </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.unitChipText,
+                        active && styles.unitChipTextActive,
+                      ]}
+                    >
+                      {UNIT_LABEL[u]}
+                    </Text>
                     </Pressable>
                   );
                 })}
@@ -847,6 +852,13 @@ const styles = StyleSheet.create({
   },
   ringUnit: { fontSize: 17, color: colors.muted },
   ringGoal: { fontSize: 12, color: colors.faint, marginTop: 6 },
+  ringSteps: {
+    fontSize: 13,
+    color: colors.muted,
+    marginTop: 2,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+  },
   ringOver: {
     fontSize: 12,
     color: colors.amberDeep,
@@ -901,7 +913,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
   },
-  barCol: { flex: 1, alignItems: 'center' },
+  barCol: { flex: 1, alignItems: 'center', minHeight: 40, justifyContent: 'flex-end' },
   dayLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -985,10 +997,12 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
   },
   unitChip: {
-    paddingHorizontal: 12,
+    flex: 1,
+    paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: 'transparent',
+    alignItems: 'center',
   },
   unitChipActive: {
     backgroundColor: colors.tealSoft,
