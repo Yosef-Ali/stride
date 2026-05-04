@@ -248,44 +248,103 @@ export default function Home() {
     };
   }, []);
 
+  // ─── Server post logic (refactored so interval + background flush share it) ──
+  const lastPostAtRef = useRef(0);
+  const lastPostedStepsRef = useRef(0);
+  // Mark whether we've already attempted an initial seed-post on this
+  // component mount, so re-focus events (useFocusEffect) don't re-post
+  // stale cached data if the server already has it.
+  const seededRef = useRef(false);
+
+  const postStepsToServer = useCallback(async () => {
+    const steps = liveStepsRef.current;
+    if (steps == null || steps === 0) return;
+    const todayPayload = homeRef.current?.today;
+    if (!todayPayload) return;
+    const serverSteps = todayPayload.steps ?? 0;
+    const now = Date.now();
+    const delta = steps - lastPostedStepsRef.current;
+    const shouldPost =
+      steps > serverSteps &&
+      (now - lastPostAtRef.current > 60_000 || delta >= 50);
+    if (!shouldPost) return;
+    try {
+      await apiPost('/api/walks', {
+        date: todayLocal(),
+        distanceKm: stepsToDistanceKm(steps),
+        steps,
+        activeMinutes: Math.round(steps / STEPS_PER_ACTIVE_MIN),
+      });
+      lastPostAtRef.current = now;
+      lastPostedStepsRef.current = steps;
+      await loadHome();
+    } catch {
+      // silent — pull-to-refresh will surface real errors
+    }
+  }, [loadHome]);
+
+  // Seed the server with any cached pedometer data as soon as we mount
+  // and have a server baseline loaded. Without this, a user who opens the
+  // app after a long walk yesterday would see yesterday's steps only on
+  // the UI ring (from AsyncStorage) but never push to the server, so the
+  // Steps tab shows yesterday as zero.
+  useEffect(() => {
+    if (!home || seededRef.current) return;
+    if (liveSteps == null || liveSteps === 0) return;
+    const todayPayload = home.today;
+    if (!todayPayload) return;
+    // Only seed the past day's data — today's steps are handled by the
+    // interval timer below.
+    const serverSteps = todayPayload.steps ?? 0;
+    if (liveSteps > serverSteps) {
+      seededRef.current = true;
+      postStepsToServer();
+    }
+  }, [home, liveSteps, postStepsToServer]);
+
   // Server post timer: every 30s, post live step totals to the server if
   // they've grown past the throttle thresholds. Pure ref read — no sensor,
   // no AsyncStorage on this path.
   useEffect(() => {
-    const lastPostAt = { current: 0 };
-    const lastPostedSteps = { current: 0 };
-    const post = async () => {
-      const steps = liveStepsRef.current;
-      if (steps == null || steps === 0) return;
-      // Don't post until we've loaded the server baseline. Otherwise
-      // serverSteps falls back to 0 and we may push a count that the
-      // server already had from an earlier session.
-      const todayPayload = homeRef.current?.today;
-      if (!todayPayload) return;
-      const serverSteps = todayPayload.steps ?? 0;
-      const now = Date.now();
-      const delta = steps - lastPostedSteps.current;
-      const shouldPost =
-        steps > serverSteps &&
-        (now - lastPostAt.current > 60_000 || delta >= 50);
-      if (!shouldPost) return;
-      try {
-        await apiPost('/api/walks', {
-          date: todayLocal(),
-          distanceKm: stepsToDistanceKm(steps),
-          steps,
-          activeMinutes: Math.round(steps / STEPS_PER_ACTIVE_MIN),
-        });
-        lastPostAt.current = now;
-        lastPostedSteps.current = steps;
-        await loadHome();
-      } catch {
-        // silent — pull-to-refresh will surface real errors
-      }
-    };
-    const interval = setInterval(post, 30_000);
+    const interval = setInterval(postStepsToServer, 30_000);
+    return () => clearInterval(interval);
+  }, [postStepsToServer]);
+
+  // Server data refresh timer: every 60s, refresh the home payload from the
+  // server — regardless of step activity. This catches day-boundary rollovers
+  // (new day, fresh week) and server-side edits without requiring the user to
+  // pull-to-refresh. Without this, the weekly chart bars and leaderboard stay
+  // stale until the user takes a step or manually refreshes.
+  useEffect(() => {
+    const interval = setInterval(loadHome, 60_000);
     return () => clearInterval(interval);
   }, [loadHome]);
+
+  // Periodic leaderboard refresh — keeps the "vs. your circle" comparison
+  // current without relying on the user pulling to refresh.
+  useEffect(() => {
+    if (!userId || !circleId) return;
+    const interval = setInterval(() => {
+      apiGet<{ leaderboard: LeaderRow[] }>(
+        `/api/circles/${circleId}/leaderboard`,
+      )
+        .then((r) => setLeaderboard(r.leaderboard))
+        .catch(() => {});
+    }, 120_000);
+    return () => clearInterval(interval);
+  }, [userId, circleId]);
+
+  // Flush steps to the server when the app goes to background or the user
+  // switches tabs. Without this, closing the app mid-day means the last
+  // ~29s of steps are never sent and the Stats tab shows an incomplete day.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' || state === 'inactive') {
+        postStepsToServer();
+      }
+    });
+    return () => sub.remove();
+  }, [postStepsToServer]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
