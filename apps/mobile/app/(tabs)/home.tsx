@@ -499,9 +499,6 @@ export default function Home() {
                   </Text>
                   <Text style={styles.ringUnit}>km</Text>
                 </View>
-                <Text style={styles.ringSteps}>
-                  {displaySteps.toLocaleString()} steps
-                </Text>
                 {overBenchmarkKm > 0 && (
                   <Text style={styles.ringOver}>
                     +{overBenchmarkKm.toFixed(1)} km past {KM_BENCHMARK}
