@@ -1,0 +1,19 @@
+# prevent EAS from hoisting monorepo workspace deps
+../node_modules
+../package.json
+../package-lock.json
+../pnpm-lock.yaml
+../pnpm-workspace.yaml
+../packages
+../api
+../.vercel
+../dist
+../.next
+
+# local exclusions
+node_modules
+.expo
+dist
+.git
+*.jks
+*.keystore
