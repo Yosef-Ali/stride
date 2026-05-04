@@ -18,8 +18,6 @@ dist
 *.jks
 *.keystore
 
-# android build intermediates (EAS does its own build)
-android/app/build
-android/.gradle
-android/build
-android/local.properties
+# EAS generates android/ during prebuild
+# (custom module code is in modules/stride-steps/android/)
+android
