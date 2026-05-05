@@ -1,23 +1,28 @@
-# prevent EAS from hoisting monorepo workspace deps
-../node_modules
-../package.json
-../package-lock.json
-../pnpm-lock.yaml
-../pnpm-workspace.yaml
-../packages
-../api
-../.vercel
-../dist
-../.next
+# Dependencies
+node_modules/
 
-# local exclusions
-node_modules
-.expo
-dist
-.git
-*.jks
-*.keystore
+# Native build dirs (EAS rebuilds from scratch)
+android/app/build/
+android/.gradle/
+android/build/
 
-# EAS generates android/ during prebuild
-# (custom module code is in modules/stride-steps/android/)
-android
+# Git
+.git/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Expo
+.expo/
+dist/
+
+# Generated
+*.tsbuildinfo
+
+# Large data
+**/*.tar.gz
+**/*.zip
+**/*.mp4
+**/*.png
