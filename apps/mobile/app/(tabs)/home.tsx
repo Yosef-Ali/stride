@@ -171,7 +171,14 @@ export default function Home() {
       try {
         const perm = await Pedometer.requestPermissionsAsync();
         if (cancelled) return;
-        if (!perm.granted) return;
+        if (!perm.granted) {
+          setSensorStatus(
+            perm.canAskAgain
+              ? 'Step counting needs Physical Activity permission. Please grant it.'
+              : 'Permission denied. Enable Physical Activity in Settings → Apps → Stride → Permissions.',
+          );
+          return;
+        }
 
         // Permission is now confirmed — explicitly tell the native side
         // to register the STEP_COUNTER listener (the OnCreate eager
