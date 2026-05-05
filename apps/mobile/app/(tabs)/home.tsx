@@ -222,11 +222,21 @@ export default function Home() {
 
         // Seed the UI from the latest cached cumulative reading so we
         // don't sit on 0 until the user takes their next step.
-        const result = await readTodaysActivity();
-        if (cancelled || !result.ok) return;
-        if (result.steps === lastStepsRef.current) return;
-        lastStepsRef.current = result.steps;
-        setLiveSteps(result.steps);
+        // Don't block startup on this — the push listener already handles
+        // live updates. If the seed fails (e.g. 30s timeout while sitting
+        // still), just mark as started and let the listener take over.
+        try {
+          const result = await readTodaysActivity();
+          if (!cancelled && result.ok) {
+            if (result.steps !== lastStepsRef.current) {
+              lastStepsRef.current = result.steps;
+              setLiveSteps(result.steps);
+              setSensorStatus(null);
+            }
+          }
+        } catch {
+          // seed is best-effort; push listener covers the rest
+        }
 
         started = true;
       } finally {
