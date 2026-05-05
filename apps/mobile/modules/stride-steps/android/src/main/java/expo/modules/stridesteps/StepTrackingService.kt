@@ -44,20 +44,30 @@ class StepTrackingService : Service() {
 
   override fun onBind(intent: Intent?): IBinder? = null
 
+  private var retryCount = 0
+  private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
   override fun onCreate() {
     super.onCreate()
     ensureChannel()
+    retryCount = 0
+    tryStartForeground()
+  }
+
+  private fun tryStartForeground() {
     try {
       startForegroundCompat(buildNotification())
+      StepSensorBridge.acquire(this)
     } catch (e: Throwable) {
-      // Android 14+ throws ForegroundServiceStartNotAllowedException if
-      // ACTIVITY_RECOGNITION isn't granted yet. Bail cleanly — the JS
-      // side will retry once the user grants the permission.
-      android.util.Log.w("StrideSteps", "startForeground failed", e)
-      stopSelf()
-      return
+      if (retryCount < 10) {
+        retryCount++
+        android.util.Log.w("StrideSteps", "startForeground attempt $retryCount failed, retrying in 1s", e)
+        handler.postDelayed({ tryStartForeground() }, 1_000)
+      } else {
+        android.util.Log.e("StrideSteps", "startForeground failed after 10 retries, giving up", e)
+        stopSelf()
+      }
     }
-    StepSensorBridge.acquire(this)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
