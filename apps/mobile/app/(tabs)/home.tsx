@@ -105,6 +105,8 @@ export default function Home() {
   // are derived from this; no separate state needed.
   const [liveSteps, setLiveSteps] = useState<number | null>(null);
 
+  const [sensorStatus, setSensorStatus] = useState<string | null>(null);
+
   const loadHome = useCallback(async () => {
     if (!userId) return;
     try {
@@ -187,11 +189,29 @@ export default function Home() {
             lastUpdateAtRef.current = now;
             lastStepsRef.current = steps;
             setLiveSteps(steps);
+            setSensorStatus(null); // sensor is working, clear any error
           } catch {
             // server post on next tick will catch up
           }
         });
-        startBackgroundTrackingAsync().catch(() => {});
+
+        // Small delay: on some Android 14+ devices, the permission grant
+        // isn't fully propagated when requestPermissionsAsync resolves,
+        // causing startForeground(FOREGROUND_SERVICE_TYPE_HEALTH) to throw.
+        await new Promise((r) => setTimeout(r, 300));
+
+        try {
+          await startBackgroundTrackingAsync();
+          setSensorStatus(null);
+        } catch (e: any) {
+          const msg = e?.message ?? String(e);
+          console.warn('[stride] foreground service failed:', msg);
+          setSensorStatus(
+            msg.includes('FOREGROUND_SERVICE')
+              ? 'Permission needed: enable Physical Activity in Settings → Apps → Stride'
+              : 'Step sensor unavailable. Check phone settings.',
+          );
+        }
 
         // Seed the UI from the latest cached cumulative reading so we
         // don't sit on 0 until the user takes their next step.
@@ -478,6 +498,11 @@ export default function Home() {
           <HomeSkeleton />
         ) : (
           <>
+            {sensorStatus && (
+              <View style={styles.sensorBanner}>
+                <Text style={styles.sensorBannerText}>{sensorStatus}</Text>
+              </View>
+            )}
             <View style={styles.ringRow}>
               <ProgressRing size={200} stroke={13} value={ringValue}>
                 <Text style={styles.ringEyebrow}>
@@ -1076,5 +1101,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.ink,
     lineHeight: 18,
+  },
+  sensorBanner: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#FFF3E0',
+    borderWidth: 1,
+    borderColor: '#FFCC80',
+  },
+  sensorBannerText: {
+    fontSize: 13,
+    color: '#E65100',
+    lineHeight: 18,
+    fontWeight: '500',
   },
 });
