@@ -180,11 +180,34 @@ export default function Home() {
           return;
         }
 
-        // Permission is now confirmed — explicitly tell the native side
-        // to register the STEP_COUNTER listener (the OnCreate eager
-        // acquire is a no-op pre-grant), then attach the JS subscriber
-        // and start the foreground service.
-        await acquireSensorAsync().catch(() => false);
+        // Small delay FIRST: on Android 14+ (especially Samsung), the
+        // permission grant from requestPermissionsAsync isn't fully
+        // propagated when the promise resolves. Both the foreground
+        // service (FOREGROUND_SERVICE_TYPE_HEALTH) and the native
+        // sensor listener (checkSelfPermission) fail if we proceed
+        // immediately. 300ms covers the common case; retry loop
+        // catches stragglers.
+        await new Promise((r) => setTimeout(r, 300));
+
+        // Now register the native STEP_COUNTER listener. The OnCreate
+        // eager acquire was a no-op pre-grant, so this is the real
+        // registration. Retry up to 3 times with 200ms gaps — some
+        // ROMs take longer to propagate the grant.
+        let sensorOk = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          sensorOk = await acquireSensorAsync().catch(() => false);
+          if (sensorOk) break;
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 200));
+        }
+        if (!sensorOk) {
+          setSensorStatus(
+            'Step sensor unavailable. Check that Physical Activity permission is enabled in Settings → Apps → Stride.',
+          );
+          // Don't return — still try the foreground service and seed
+          // below; on some devices the sensor works even if acquire
+          // reports false (the listener from OnCreate may have latched).
+        }
+
         sub = addStepCounterListener(async (event) => {
           try {
             const { steps } = await computeTodayStepsFromCumulative(
@@ -201,11 +224,6 @@ export default function Home() {
             // server post on next tick will catch up
           }
         });
-
-        // Small delay: on some Android 14+ devices, the permission grant
-        // isn't fully propagated when requestPermissionsAsync resolves,
-        // causing startForeground(FOREGROUND_SERVICE_TYPE_HEALTH) to throw.
-        await new Promise((r) => setTimeout(r, 300));
 
         try {
           await startBackgroundTrackingAsync();
