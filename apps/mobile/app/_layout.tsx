@@ -67,6 +67,14 @@ export default function RootLayout() {
                 gestureEnabled: true,
               }}
             />
+            <Stack.Screen
+              name="winner"
+              options={{
+                presentation: 'modal',
+                animation: 'slide_from_bottom',
+                gestureEnabled: true,
+              }}
+            />
           </Stack>
         )}
       </SafeAreaProvider>

@@ -14,6 +14,14 @@ export async function GET(req: Request) {
   const db = getDb();
   const user = await queries.getUser(db, actorId);
   if (!user) return Response.json({ error: 'not found' }, { status: 404 });
+
+  // Lifetime totals — used by the Me tab stats strip. Pulls every recorded
+  // day so users with old accounts get an accurate total without paginating.
+  const allDays = await queries.getMyStats(db, actorId, '1970-01-01', '2999-12-31');
+  const totalKm = allDays.reduce((s, r) => s + Number(r.distanceKm), 0);
+  const daysWalked = allDays.filter((r) => Number(r.distanceKm) > 0).length;
+  const weeksActive = countDistinctIsoWeeks(allDays.map((r) => r.date));
+
   return Response.json({
     user: {
       id: user.id,
@@ -21,8 +29,37 @@ export async function GET(req: Request) {
       name: user.name,
       avatarColor: user.avatarColor,
       weeklyGoalKm: user.weeklyGoalKm,
+      createdAt: user.createdAt,
+    },
+    lifetime: {
+      totalKm: Number(totalKm.toFixed(2)),
+      daysWalked,
+      weeksActive,
     },
   });
+}
+
+function countDistinctIsoWeeks(dates: string[]): number {
+  const seen = new Set<string>();
+  for (const d of dates) {
+    const [y, m, day] = d.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, day));
+    // ISO week: Thursday-anchored
+    const target = new Date(dt);
+    const dayNum = (dt.getUTCDay() + 6) % 7;
+    target.setUTCDate(dt.getUTCDate() - dayNum + 3);
+    const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+    const week =
+      1 +
+      Math.round(
+        ((target.getTime() - firstThursday.getTime()) / 86400000 -
+          ((firstThursday.getUTCDay() + 6) % 7) +
+          3) /
+          7,
+      );
+    seen.add(`${target.getUTCFullYear()}-W${week}`);
+  }
+  return seen.size;
 }
 
 export async function PATCH(req: Request) {

@@ -415,7 +415,27 @@ export default function CircleTab() {
             )}
 
             {winners && winners.length > 0 && (
-              <View style={styles.championCard}>
+              <Pressable
+                style={styles.championCard}
+                onPress={() => {
+                  const w = winners[0]!;
+                  const me = leaderboard?.find((r) => r.userId === userId);
+                  router.push({
+                    pathname: '/winner',
+                    params: {
+                      week: String(w.weekNumber),
+                      year: String(w.year),
+                      winnerUserId: w.userId,
+                      winnerName: w.name,
+                      winnerInitials: (w.name[0] ?? '?').toUpperCase(),
+                      winnerColor: w.avatarColor,
+                      distanceKm: String(w.distanceKm),
+                      viewerKm: me ? String(me.distanceKm) : '0',
+                      viewerRank: me ? String(me.rank) : '0',
+                    },
+                  });
+                }}
+              >
                 <View style={styles.championHeader}>
                   <Text style={styles.championEyebrow}>
                     Last week's champion
@@ -448,8 +468,18 @@ export default function CircleTab() {
                       {Number(winners[0]!.distanceKm).toFixed(1)} km walked
                     </Text>
                   </View>
+                  <Svg width={8} height={14} viewBox="0 0 8 14" fill="none">
+                    <Path
+                      d="M1 1l6 6-6 6"
+                      stroke={colors.amberDeep}
+                      strokeWidth={1.8}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                    />
+                  </Svg>
                 </View>
-              </View>
+              </Pressable>
             )}
 
             <View style={styles.membersHeader}>
