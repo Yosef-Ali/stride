@@ -458,14 +458,23 @@ export default function Home() {
   // other day they read straight from the server-recorded daily totals so
   // the user can scrub through the week and see each day's numbers.
   //
-  const displaySteps = isToday
-    ? (liveSteps ?? today?.steps ?? 0)
+  // For today: take the larger of live sensor steps and the server total.
+  // `??` would short-circuit on `liveSteps === 0`, which happens on a fresh
+  // install / cleared AsyncStorage when the baseline is set to the current
+  // cumulative reading — leaving the ring stuck at 0 even though the DB has
+  // earlier-today data. Max() picks the right one in every state:
+  //   • fresh state: live=0, server=N → shows N
+  //   • live overtakes server between posts: shows live
+  //   • new day: both 0 → shows 0
+  const todaySteps = isToday
+    ? Math.max(liveSteps ?? 0, today?.steps ?? 0)
     : (selectedDay?.steps ?? 0);
+  const displaySteps = todaySteps;
   const displayDistanceKm = isToday
-    ? stepsToDistanceKm(liveSteps ?? today?.steps ?? 0)
+    ? stepsToDistanceKm(todaySteps)
     : (selectedDay?.distanceKm ?? 0);
   const displayActiveMinutes = isToday
-    ? Math.round((liveSteps ?? today?.steps ?? 0) / STEPS_PER_ACTIVE_MIN)
+    ? Math.round(todaySteps / STEPS_PER_ACTIVE_MIN)
     : (selectedDay?.activeMinutes ?? 0);
   const paceKmh =
     displayActiveMinutes > 0
