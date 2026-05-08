@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle as SvgCircle, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { apiGet, apiPatch, apiPost } from '../../src/lib/api';
 import { useSession } from '../../src/stores/session';
 import { colors } from '../../src/lib/tokens';
@@ -31,19 +31,6 @@ type Lifetime = {
   totalKm: number;
   daysWalked: number;
   weeksActive: number;
-};
-
-type Circle = {
-  id: string;
-  name: string;
-  inviteCode: string;
-  createdBy: string;
-};
-
-type Member = {
-  userId: string;
-  name: string;
-  avatarColor: string;
 };
 
 type Winner = {
@@ -76,11 +63,9 @@ function formatJoinDate(iso: string) {
 
 export default function MeTab() {
   const router = useRouter();
-  const { userId, circleId, setUser, setActiveCircle, signOut } = useSession();
+  const { userId, circleId, setUser, signOut } = useSession();
   const [me, setMe] = useState<Me | null>(null);
   const [lifetime, setLifetime] = useState<Lifetime | null>(null);
-  const [activeCircle, setLocalActiveCircle] = useState<Circle | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
   const [myWins, setMyWins] = useState<Winner[]>([]);
   const [weekKm, setWeekKm] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -96,36 +81,29 @@ export default function MeTab() {
     setLoading(true);
     setError(null);
     try {
-      const [meRes, circlesRes, homeRes] = await Promise.all([
-        apiGet<{ user: Me; lifetime: Lifetime }>('/api/me'),
-        apiGet<{ circles: Circle[] }>('/api/circles/mine'),
-        apiGet<HomePayload>(`/api/home?today=${encodeURIComponent(todayLocal())}`).catch(
-          () => null,
-        ),
+      // Each request is independently catchable so a slow / not-yet-deployed
+      // endpoint (e.g. older /api/me without `lifetime`) doesn't keep the tab
+      // stuck on the loading spinner.
+      const [meRes, homeRes, winnersRes] = await Promise.all([
+        apiGet<{ user: Me; lifetime?: Lifetime }>('/api/me').catch(() => null),
+        apiGet<HomePayload>(
+          `/api/home?today=${encodeURIComponent(todayLocal())}`,
+        ).catch(() => null),
+        circleId
+          ? apiGet<{ winners: (Winner & { userId: string })[] }>(
+              `/api/circles/${circleId}/winners`,
+            ).catch(() => ({ winners: [] }))
+          : Promise.resolve({ winners: [] }),
       ]);
-      setMe(meRes.user);
-      setLifetime(meRes.lifetime);
-
-      const active =
-        circlesRes.circles.find((c) => c.id === circleId) ?? circlesRes.circles[0] ?? null;
-      setLocalActiveCircle(active);
-
-      if (active) {
-        const [membersRes, winnersRes] = await Promise.all([
-          apiGet<{ members: Member[] }>(`/api/circles/${active.id}/members`).catch(
-            () => ({ members: [] }),
-          ),
-          apiGet<{ winners: (Winner & { userId: string })[] }>(
-            `/api/circles/${active.id}/winners`,
-          ).catch(() => ({ winners: [] })),
-        ]);
-        setMembers(membersRes.members);
-        setMyWins(winnersRes.winners.filter((w) => w.userId === userId));
-      } else {
-        setMembers([]);
-        setMyWins([]);
+      if (!meRes) {
+        setError('Could not load profile');
+        return;
       }
-
+      setMe(meRes.user);
+      setLifetime(
+        meRes.lifetime ?? { totalKm: 0, daysWalked: 0, weeksActive: 0 },
+      );
+      setMyWins(winnersRes.winners.filter((w) => w.userId === userId));
       if (homeRes) {
         setWeekKm(homeRes.week.reduce((s, d) => s + d.distanceKm, 0));
       }
@@ -188,10 +166,6 @@ export default function MeTab() {
     Alert.alert(label, 'Coming soon.');
   }
 
-  function openManageCircles() {
-    Alert.alert('Manage circles', 'Circle management is coming soon.');
-  }
-
   async function crownLastWeek() {
     setDevBusy(true);
     setDevStatus(null);
@@ -212,7 +186,7 @@ export default function MeTab() {
     }
   }
 
-  if (loading || !me || !lifetime) {
+  if (loading || !me) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={{ paddingTop: 60, alignItems: 'center' }}>
@@ -223,17 +197,15 @@ export default function MeTab() {
     );
   }
 
+  const lifetimeSafe = lifetime ?? { totalKm: 0, daysWalked: 0, weeksActive: 0 };
   const initials = (me.name[0] ?? '?').toUpperCase();
   const goalKm = Number(me.weeklyGoalKm) || 40;
   const goalPct = Math.min(1, weekKm / goalKm);
   const stats = [
-    { value: lifetime.totalKm.toFixed(0), unit: 'km', label: 'Total distance' },
-    { value: String(lifetime.daysWalked), unit: '', label: 'Days walked' },
-    { value: String(lifetime.weeksActive), unit: '', label: 'Weeks active' },
+    { value: lifetimeSafe.totalKm.toFixed(0), unit: 'km', label: 'Total distance' },
+    { value: String(lifetimeSafe.daysWalked), unit: '', label: 'Days walked' },
+    { value: String(lifetimeSafe.weeksActive), unit: '', label: 'Weeks active' },
   ];
-  const isOwner = activeCircle ? activeCircle.createdBy === userId : false;
-  const stackedMembers = members.filter((m) => m.userId !== userId).slice(0, 4);
-  const extraMembers = Math.max(0, members.length - 1 - stackedMembers.length);
 
   // 12 trophy slots — fill earned ones from most-recent wins backwards.
   const trophies = Array.from({ length: TROPHY_SLOT_COUNT }, (_, i) => {
@@ -361,45 +333,6 @@ export default function MeTab() {
             </View>
           </View>
         </Section>
-
-        {/* Your circle */}
-        {activeCircle && (
-          <Section title="Your circle">
-            <View style={styles.circleCard}>
-              <Pressable
-                style={styles.circleRow}
-                onPress={() => router.push('/(tabs)/circle')}
-              >
-                <View style={styles.circleBadge}>
-                  <Text style={styles.circleBadgeLetter}>
-                    {activeCircle.name[0]?.toUpperCase() ?? 'C'}
-                  </Text>
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.circleName}>{activeCircle.name}</Text>
-                  <Text style={styles.circleMeta}>
-                    {members.length} {members.length === 1 ? 'member' : 'members'}
-                    {isOwner ? ' · Owner' : ''}
-                  </Text>
-                </View>
-                <Chevron />
-              </Pressable>
-              <View style={styles.circleDivider} />
-              <View style={styles.circleFooter}>
-                <AvatarStack
-                  avatars={stackedMembers.map((m) => ({
-                    initials: (m.name[0] ?? '?').toUpperCase(),
-                    color: m.avatarColor,
-                  }))}
-                  extra={extraMembers}
-                />
-                <Pressable onPress={openManageCircles} hitSlop={8}>
-                  <Text style={styles.manageLink}>Manage</Text>
-                </Pressable>
-              </View>
-            </View>
-          </Section>
-        )}
 
         {/* Settings */}
         <Section title="Settings">
@@ -543,35 +476,6 @@ function TrophySlot({ earned, week }: { earned: boolean; week: string }) {
         </>
       ) : (
         <View style={styles.trophyEmpty} />
-      )}
-    </View>
-  );
-}
-
-function AvatarStack({
-  avatars,
-  extra,
-}: {
-  avatars: { initials: string; color: string }[];
-  extra: number;
-}) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      {avatars.map((a, i) => (
-        <View
-          key={i}
-          style={[
-            styles.stackAvatar,
-            { backgroundColor: a.color, marginLeft: i === 0 ? 0 : -8 },
-          ]}
-        >
-          <Text style={styles.stackAvatarText}>{a.initials}</Text>
-        </View>
-      ))}
-      {extra > 0 && (
-        <View style={[styles.stackAvatar, styles.stackExtra]}>
-          <Text style={styles.stackExtraText}>+{extra}</Text>
-        </View>
       )}
     </View>
   );
@@ -785,73 +689,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   goalFill: { height: '100%', backgroundColor: colors.teal, borderRadius: 2 },
-
-  circleCard: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-  },
-  circleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingBottom: 12,
-  },
-  circleDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.line,
-  },
-  circleBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.tealSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  circleBadgeLetter: { color: colors.teal, fontSize: 13, fontWeight: '500' },
-  circleName: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.ink,
-    letterSpacing: -0.1,
-  },
-  circleMeta: { fontSize: 12, color: colors.muted, marginTop: 1 },
-  circleFooter: {
-    paddingTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  stackAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  stackAvatarText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
-  stackExtra: { backgroundColor: '#E6E6E0', marginLeft: -8 },
-  stackExtraText: {
-    color: colors.muted,
-    fontSize: 10,
-    fontWeight: '500',
-    letterSpacing: 0.1,
-  },
-  manageLink: {
-    fontSize: 12,
-    color: colors.tealDeep,
-    letterSpacing: 0.1,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-  },
 
   settingsCard: {
     backgroundColor: colors.card,
