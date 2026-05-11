@@ -39,7 +39,7 @@ export function ProgressRing({
   const center = size / 2;
 
   return (
-    <View style={[{ width: size, height: size }, style]}>
+    <View style={[{ width: size, height: size, flexShrink: 0 }, style]}>
       <Svg
         width={size}
         height={size}

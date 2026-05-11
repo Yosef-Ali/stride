@@ -33,7 +33,7 @@ export type SyncResult =
   | { ok: true; steps: number; distanceKm: number }
   | { ok: false; reason: 'unsupported' | 'denied' | 'error'; message?: string };
 
-const STATE_KEY = 'stride.pedometer.state.v2';
+const STATE_KEY = 'stride.pedometer.state.v3';
 const SAVE_DEBOUNCE_MS = 5_000;
 
 type State = {
@@ -101,7 +101,24 @@ export async function computeTodayStepsFromCumulative(
 
   let baseline = state.baselines[today];
   if (baseline === undefined) {
-    baseline = state.lastCumulative ?? cumulative;
+    // When the app hasn't been opened for 2+ days, lastCumulative is stale
+    // and all accumulated steps since then would be wrongly attributed to
+    // today. Only carry over from yesterday (normal overnight gap); for
+    // larger gaps start fresh so today's count begins at 0.
+    const yesterday = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dd}`;
+    })();
+    if (state.lastDate && state.lastDate >= yesterday) {
+      baseline = state.lastCumulative ?? cumulative;
+    } else {
+      // Multi-day gap or first run — start fresh
+      baseline = cumulative;
+    }
     state.baselines[today] = baseline;
   }
 

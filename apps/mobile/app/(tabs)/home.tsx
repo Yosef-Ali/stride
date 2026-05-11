@@ -50,6 +50,8 @@ type HomePayload = {
   today: DayStat;
   week: DayStat[];
   todayIdx: number;
+  weekStart?: string;
+  weekEnd?: string;
 };
 
 // Fixed visual reference. The ring fills from 0 → 20 km; past 20 km the
@@ -439,33 +441,69 @@ export default function Home() {
     return { diffPct, rank: me.rank, total: leaderboard.length };
   }, [leaderboard, userId]);
 
-  const today = home?.today;
-  const week = home?.week ?? [];
+  // ─── Week navigation ─────────────────────────────────────────────────
+  const [weekOffset, setWeekOffset] = useState(0);
+  const isCurrentWeek = weekOffset === 0;
+
+  // Past-week data loaded on demand; current week always comes from `home`.
+  const [pastWeek, setPastWeek] = useState<HomePayload | null>(null);
+  const [pastWeekLoading, setPastWeekLoading] = useState(false);
+
+  useEffect(() => {
+    if (weekOffset === 0) {
+      setPastWeek(null);
+      return;
+    }
+    let cancelled = false;
+    setPastWeekLoading(true);
+    const d = new Date();
+    d.setDate(d.getDate() + weekOffset * 7);
+    const refDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    apiGet<HomePayload>(`/api/home?today=${encodeURIComponent(refDate)}`)
+      .then((r) => { if (!cancelled) setPastWeek(r); })
+      .catch((e) => console.warn('past week load failed', e))
+      .finally(() => { if (!cancelled) setPastWeekLoading(false); });
+    return () => { cancelled = true; };
+  }, [weekOffset]);
+
+  const displayData = isCurrentWeek ? home : pastWeek;
+  const today = home?.today; // always current week for live-step tracking
+  const week = displayData?.week ?? [];
   const todayIdx = home?.todayIdx ?? 0;
 
-  // Selected day — defaults to today, switches when the user taps a bar.
-  // Re-pin to today whenever a fresh payload arrives, so a refresh after
-  // midnight rolls the selection forward to the new "today".
+  // Week label for past weeks: "May 4 – 10"
+  const weekLabel = useMemo(() => {
+    if (isCurrentWeek) return 'This week';
+    const ws = displayData?.weekStart;
+    const we = displayData?.weekEnd;
+    if (!ws || !we) return 'Loading…';
+    const s = new Date(`${ws}T12:00`);
+    const e = new Date(`${we}T12:00`);
+    const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+    return `${s.toLocaleDateString(undefined, opts)} – ${e.toLocaleDateString(undefined, opts)}`;
+  }, [isCurrentWeek, displayData?.weekStart, displayData?.weekEnd]);
+
+  // Selected day — defaults to today's weekday position, switches on tap.
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   useEffect(() => {
     setSelectedIdx(null);
-  }, [home?.todayIdx, home?.week?.[0]?.date]);
+  }, [home?.todayIdx, home?.week?.[0]?.date, weekOffset]);
   const activeIdx = selectedIdx ?? todayIdx;
-  const isToday = activeIdx === todayIdx;
+  // "Today" only when viewing current week and the active bar is today's.
+  const isToday = isCurrentWeek && activeIdx === todayIdx;
   const selectedDay = week[activeIdx];
 
-  // Ring + side stats reflect step-counter data when viewing today; for any
-  // other day they read straight from the server-recorded daily totals so
-  // the user can scrub through the week and see each day's numbers.
-  //
-  // For today: take the larger of live sensor steps and the server total.
-  // `??` would short-circuit on `liveSteps === 0`, which happens on a fresh
-  // install / cleared AsyncStorage when the baseline is set to the current
-  // cumulative reading — leaving the ring stuck at 0 even though the DB has
-  // earlier-today data. Max() picks the right one in every state:
-  //   • fresh state: live=0, server=N → shows N
-  //   • live overtakes server between posts: shows live
-  //   • new day: both 0 → shows 0
+    // Ring + side stats reflect step-counter data when viewing today; for any
+    // other day (or past week) they read from the server daily totals.
+    //
+    // For today: take the larger of live sensor steps and the server total.
+    // `??` would short-circuit on `liveSteps === 0`, which happens on a fresh
+    // install / cleared AsyncStorage when the baseline is set to the current
+    // cumulative reading — leaving the ring stuck at 0 even though the DB has
+    // earlier-today data. Max() picks the right one in every state:
+    //   • fresh state: live=0, server=N → shows N
+    //   • live overtakes server between posts: shows live
+    //   • new day: both 0 → shows 0
   const todaySteps = isToday
     ? Math.max(liveSteps ?? 0, today?.steps ?? 0)
     : (selectedDay?.steps ?? 0);
@@ -480,37 +518,34 @@ export default function Home() {
     displayActiveMinutes > 0
       ? displayDistanceKm / (displayActiveMinutes / 60)
       : 0;
-  // Unit picked in the chip-row under the weekly card. Affects bars + total
-  // only; ring + side stats are independent.
+
   const [weekUnit, setWeekUnit] = useState<WeekUnit>('km');
   const weekValues = week.map((w) => valueForUnit(w, weekUnit));
   const weekTotal = weekValues.reduce((s, v) => s + v, 0);
-  const noWalksYet = !!home && week.reduce((s, w) => s + w.distanceKm, 0) === 0;
+  const noWalksYet = !!home && isCurrentWeek && week.reduce((s, w) => s + w.distanceKm, 0) === 0;
   const benchmark = benchmarkForUnit(weekUnit);
-  // Bars scale to the larger of the benchmark or the week's max so a
-  // benchmark-busting day still has a sensible bar height.
   const weekMax = Math.max(benchmark, ...weekValues);
-  // Ring value is the day's km against the 20km benchmark. The ring itself
-  // draws an overflow arc past 100% — no clamping here.
   const ringValue = displayDistanceKm / KM_BENCHMARK;
   const overBenchmarkKm = Math.max(0, displayDistanceKm - KM_BENCHMARK);
 
   // Week highlights — purely derived facts, no settings. Fills the gap
   // beneath the weekly card without re-introducing goal-shaped UI.
+  // For past weeks all 7 days count; for current week only up to today.
+  const maxIdx = isCurrentWeek ? todayIdx : 6;
   const dayShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const activeDays = week.filter(
-    (w, i) => i <= todayIdx && w.distanceKm > 0,
+    (w, i) => i <= maxIdx && w.distanceKm > 0,
   ).length;
   const bestIdx = week.reduce(
     (best, w, i) =>
-      i <= todayIdx && w.distanceKm > week[best].distanceKm ? i : best,
+      i <= maxIdx && w.distanceKm > week[best].distanceKm ? i : best,
     0,
   );
   const bestDay = week[bestIdx];
   const hasBest = !!bestDay && bestDay.distanceKm > 0;
-  // Current streak: count back from today over consecutive active days.
+  // Current streak: count back from the relevant last day.
   let streak = 0;
-  for (let i = todayIdx; i >= 0; i--) {
+  for (let i = maxIdx; i >= 0; i--) {
     if (week[i] && week[i].distanceKm > 0) streak++;
     else break;
   }
@@ -597,17 +632,50 @@ export default function Home() {
 
             <View style={styles.card}>
               <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>This week</Text>
-                <Text style={styles.cardTotal}>
-                  {formatTotal(weekTotal, weekUnit)}
-                </Text>
+                <Pressable
+                  onPress={() => setWeekOffset((o) => o - 1)}
+                  hitSlop={12}
+                  style={styles.weekArrow}
+                >
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M15 6l-6 6 6 6"
+                      stroke={colors.muted}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </Pressable>
+                <View style={styles.cardHeaderCenter}>
+                  <Text style={styles.cardTitle}>{weekLabel}</Text>
+                  <Text style={styles.cardTotal}>
+                    {formatTotal(weekTotal, weekUnit)}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setWeekOffset((o) => Math.min(0, o + 1))}
+                  disabled={weekOffset >= 0}
+                  hitSlop={12}
+                  style={styles.weekArrow}
+                >
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M9 6l6 6-6 6"
+                      stroke={weekOffset >= 0 ? colors.lineSoft : colors.muted}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </Pressable>
               </View>
 
               <View style={styles.bars}>
                 {week.map((w, i) => {
                   const v = weekValues[i];
-                  const isTodayBar = i === todayIdx;
-                  const isFuture = i > todayIdx;
+                  const isTodayBar = isCurrentWeek && i === todayIdx;
+                  const isFuture = isCurrentWeek && i > todayIdx;
                   const isSelected = i === activeIdx;
                   const totalH = Math.max(6, (v / weekMax) * 78);
                   // Split the bar at the benchmark — base segment is teal up
@@ -932,7 +1000,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.1,
   },
-  sideStats: { flexDirection: 'column', gap: 18, minWidth: 92 },
+  sideStats: { flex: 1, flexDirection: 'column', gap: 18, minWidth: 92 },
   hr: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line },
   sideLabel: {
     fontSize: 11,
@@ -960,17 +1028,19 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 14,
   },
+  cardHeaderCenter: { flex: 1, alignItems: 'center' },
+  weekArrow: { padding: 4 },
   cardTitle: {
     fontSize: 14,
     fontWeight: '500',
     color: colors.ink,
     letterSpacing: -0.1,
   },
-  cardTotal: { fontSize: 12, color: colors.muted },
+  cardTotal: { fontSize: 12, color: colors.muted, marginTop: 1 },
   bars: {
     flexDirection: 'row',
     alignItems: 'flex-end',
